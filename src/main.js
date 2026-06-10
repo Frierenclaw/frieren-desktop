@@ -1,8 +1,7 @@
 import { Room, RoomEvent, Track } from "livekit-client";
 import { initRenderer, loadAvatar, updateViseme } from "./renderer.js";
 import { updateStatus, updateSubtitles } from "./ui.js";
-
-const FERN_URL = "http://localhost:8000";
+import { getFernUrl, getTokens, setTokens, clearTokens } from "./config.js";
 
 let room = null;
 let accessToken = null;
@@ -14,6 +13,77 @@ function showScreen(id) {
   document.getElementById(id).classList.remove("hidden");
 }
 
+// --- Token refresh ---
+async function refreshAccessToken() {
+  const { refreshToken } = await getTokens();
+  if (!refreshToken) throw new Error("No refresh token");
+
+  const fernUrl = await getFernUrl();
+  const res = await fetch(`${fernUrl}/api/v1/auth/refresh`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ refresh_token: refreshToken }),
+  });
+
+  if (!res.ok) throw new Error("Refresh failed");
+  const data = await res.json();
+  accessToken = data.access_token;
+  await setTokens(data.access_token, data.refresh_token);
+}
+
+// --- Authenticated fetch (auto-refresh on 401) ---
+async function authFetch(url, options = {}) {
+  const fernUrl = await getFernUrl();
+  const res = await fetch(`${fernUrl}${url}`, {
+    ...options,
+    headers: {
+      ...options.headers,
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+
+  if (res.status === 401) {
+    // Try to refresh the token
+    await refreshAccessToken();
+    // Retry the request with the new token
+    return fetch(`${fernUrl}${url}`, {
+      ...options,
+      headers: {
+        ...options.headers,
+        Authorization: `Bearer ${accessToken}`,
+      },
+    });
+  }
+
+  return res;
+}
+
+// --- Boot: check for saved token ---
+async function boot() {
+  const { accessToken: savedToken } = await getTokens();
+  if (savedToken) {
+    accessToken = savedToken;
+    try {
+      await loadCharacters();
+      showScreen("characters-screen");
+    } catch {
+      // Token expired, try refresh
+      try {
+        await refreshAccessToken();
+        await loadCharacters();
+        showScreen("characters-screen");
+      } catch {
+        await clearTokens();
+        showScreen("login-screen");
+      }
+    }
+  } else {
+    showScreen("login-screen");
+  }
+}
+
+boot();
+
 // --- Login ---
 document.getElementById("login-btn").addEventListener("click", async () => {
   const email = document.getElementById("login-email").value.trim();
@@ -22,7 +92,8 @@ document.getElementById("login-btn").addEventListener("click", async () => {
   errorEl.textContent = "";
 
   try {
-    const res = await fetch(`${FERN_URL}/api/v1/auth/login`, {
+    const fernUrl = await getFernUrl();
+    const res = await fetch(`${fernUrl}/api/v1/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({ username: email, password }),
@@ -31,6 +102,7 @@ document.getElementById("login-btn").addEventListener("click", async () => {
     if (!res.ok) throw new Error("Wrong email or password");
     const data = await res.json();
     accessToken = data.access_token;
+    await setTokens(data.access_token, data.refresh_token);
 
     await loadCharacters();
     showScreen("characters-screen");
@@ -42,9 +114,8 @@ document.getElementById("login-btn").addEventListener("click", async () => {
 
 // --- Characters ---
 async function loadCharacters() {
-  const res = await fetch(`${FERN_URL}/api/v1/hub/all`, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
+  const res = await authFetch("/api/v1/hub/all");
+  if (!res.ok) throw new Error("Failed to load characters");
   const data = await res.json();
 
   const list = document.getElementById("characters-list");
@@ -86,10 +157,8 @@ async function connect() {
   updateStatus("Connecting...");
 
   try {
-    // Request a room token from Fern
-    const res = await fetch(`${FERN_URL}/api/v1/room/?character_id=${selectedCharacter.id}`, {
+    const res = await authFetch(`/api/v1/room/?character_id=${selectedCharacter.id}`, {
       method: "POST",
-      headers: { Authorization: `Bearer ${accessToken}` },
     });
 
     if (!res.ok) throw new Error("Failed to create room");
@@ -137,4 +206,4 @@ async function connect() {
 
 async function disconnect() {
   if (room) await room.disconnect();
-}
+} 
