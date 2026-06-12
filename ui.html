@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Frieren Desktop — Settings</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body class="ui-window">
+    <div class="ui-container">
+      <header>
+        <span class="logo">🦋</span>
+        <h1>Frieren Desktop</h1>
+        <div id="connection-badge" class="badge disconnected">Disconnected</div>
+      </header>
+
+      <!-- ── INSTANCE SECTION ── -->
+      <section class="card" id="instance-section">
+        <h2>Instance</h2>
+        <div class="field-row">
+          <select id="instance-select"></select>
+          <button id="add-instance-btn" class="btn-secondary" title="Add custom instance">+</button>
+        </div>
+        <!-- Hidden until user clicks "+" -->
+        <div id="add-instance-form" class="hidden">
+          <input type="text" id="new-instance-name" placeholder="Name (e.g. My Server)" />
+          <input type="text" id="new-instance-url"  placeholder="https://my-instance.com" />
+          <div class="btn-row">
+            <button id="save-instance-btn">Save</button>
+            <button id="cancel-instance-btn" class="btn-secondary">Cancel</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── AUTH SECTION ── -->
+      <section class="card" id="auth-section">
+        <h2>Account</h2>
+
+        <div id="login-form">
+          <input type="text"     id="username" placeholder="Username" autocomplete="username" />
+          <input type="password" id="password" placeholder="Password" autocomplete="current-password" />
+          <button id="login-btn">Login</button>
+          <p id="auth-error" class="error hidden"></p>
+        </div>
+
+        <div id="logged-in-view" class="hidden">
+          <p id="auth-info" class="info-text"></p>
+          <button id="logout-btn" class="btn-danger">Logout</button>
+        </div>
+      </section>
+
+      <!-- ── CONNECTION SECTION ── -->
+      <section class="card" id="connection-section">
+        <h2>Connection</h2>
+        <p id="connection-status-text" class="info-text">Not connected</p>
+        <div class="btn-row">
+          <button id="connect-btn" disabled>Connect</button>
+          <button id="disconnect-btn" class="btn-danger hidden">Disconnect</button>
+        </div>
+      </section>
+
+      <!-- ── AVATAR SECTION ── -->
+      <section class="card" id="avatar-section">
+        <h2>Avatar Model</h2>
+        <p id="avatar-info" class="info-text">No model loaded</p>
+        <button id="load-vrm-btn">Load VRM…</button>
+      </section>
+    </div>
+
+    <script type="module" src="/src/ui.js"></script>
+  </body>
+</html>

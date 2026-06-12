@@ -1,0 +1,10 @@
+{
+  "instances": [
+    {
+      "name": "Default (frieren.ai)",
+      "url": "https://frieren.ai"
+    }
+  ],
+  "selectedInstance": 0,
+  "avatarPath": null
+}

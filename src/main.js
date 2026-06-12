@@ -1,209 +1,179 @@
-import { Room, RoomEvent, Track } from "livekit-client";
-import { initRenderer, loadAvatar, updateViseme } from "./renderer.js";
-import { updateStatus, updateSubtitles } from "./ui.js";
-import { getFernUrl, getTokens, setTokens, clearTokens } from "./config.js";
+import { listen, emit }      from '@tauri-apps/api/event';
+import { WebviewWindow }     from '@tauri-apps/api/webviewWindow';
+import { convertFileSrc }    from '@tauri-apps/api/core';
 
-let room = null;
-let accessToken = null;
-let selectedCharacter = null;
+import { initAvatar, loadVRM, applyViseme, initDragControls, resetAvatarTransform } from './avatar.js';
+import { connect, disconnect, onViseme, onStateChange, isConnected } from './livekit-client.js';
+import { getConfig } from './config.js';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 
-// --- Screens ---
-function showScreen(id) {
-  document.querySelectorAll(".screen").forEach(s => s.classList.add("hidden"));
-  document.getElementById(id).classList.remove("hidden");
-}
+import { exit } from '@tauri-apps/plugin-process';
 
-// --- Token refresh ---
-async function refreshAccessToken() {
-  const { refreshToken } = await getTokens();
-  if (!refreshToken) throw new Error("No refresh token");
+// ── Context menu ──
+const contextMenu   = document.getElementById('context-menu');
+const controlsPanel = document.getElementById('controls-panel');
+const passiveBtn    = document.getElementById('passive-btn');
+let isPassive       = false;
 
-  const fernUrl = await getFernUrl();
-  const res = await fetch(`${fernUrl}/api/v1/auth/refresh`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ refresh_token: refreshToken }),
-  });
+const canvas    = document.getElementById('avatar-canvas');
+const statusDot = document.getElementById('status-dot');
 
-  if (!res.ok) throw new Error("Refresh failed");
-  const data = await res.json();
-  accessToken = data.access_token;
-  await setTokens(data.access_token, data.refresh_token);
-}
+initAvatar(canvas);
+initDragControls(canvas);
 
-// --- Authenticated fetch (auto-refresh on 401) ---
-async function authFetch(url, options = {}) {
-  const fernUrl = await getFernUrl();
-  const res = await fetch(`${fernUrl}${url}`, {
-    ...options,
-    headers: {
-      ...options.headers,
-      Authorization: `Bearer ${accessToken}`,
-    },
-  });
-
-  if (res.status === 401) {
-    // Try to refresh the token
-    await refreshAccessToken();
-    // Retry the request with the new token
-    return fetch(`${fernUrl}${url}`, {
-      ...options,
-      headers: {
-        ...options.headers,
-        Authorization: `Bearer ${accessToken}`,
-      },
-    });
+const appWindow = getCurrentWindow();
+canvas.addEventListener('mousedown', async (e) => {
+  if (!e.ctrlKey && e.button === 0) {
+    await appWindow.startDragging();
   }
+});
 
-  return res;
-}
-
-// --- Boot: check for saved token ---
-async function boot() {
-  const { accessToken: savedToken } = await getTokens();
-  if (savedToken) {
-    accessToken = savedToken;
+(async () => {
+  const config = await getConfig();
+  if (config.avatarPath) {
     try {
-      await loadCharacters();
-      showScreen("characters-screen");
-    } catch {
-      // Token expired, try refresh
-      try {
-        await refreshAccessToken();
-        await loadCharacters();
-        showScreen("characters-screen");
-      } catch {
-        await clearTokens();
-        showScreen("login-screen");
-      }
+      await loadVRM(convertFileSrc(config.avatarPath));
+    } catch (err) {
+      console.warn('Failed to restore avatar:', err);
     }
-  } else {
-    showScreen("login-screen");
   }
-}
+})();
 
-boot();
-
-// --- Login ---
-document.getElementById("login-btn").addEventListener("click", async () => {
-  const email = document.getElementById("login-email").value.trim();
-  const password = document.getElementById("login-password").value;
-  const errorEl = document.getElementById("login-error");
-  errorEl.textContent = "";
-
-  try {
-    const fernUrl = await getFernUrl();
-    const res = await fetch(`${fernUrl}/api/v1/auth/login`, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({ username: email, password }),
-    });
-
-    if (!res.ok) throw new Error("Wrong email or password");
-    const data = await res.json();
-    accessToken = data.access_token;
-    await setTokens(data.access_token, data.refresh_token);
-
-    await loadCharacters();
-    showScreen("characters-screen");
-
-  } catch (err) {
-    errorEl.textContent = err.message;
-  }
+onViseme((visemeData) => {
+  applyViseme(visemeData);
 });
 
-// --- Characters ---
-async function loadCharacters() {
-  const res = await authFetch("/api/v1/hub/all");
-  if (!res.ok) throw new Error("Failed to load characters");
-  const data = await res.json();
+onStateChange((state) => {
+  updateStatusDot(state);
+  emit('frieren:state-update', { state }).catch(() => {});
+});
 
-  const list = document.getElementById("characters-list");
-  list.innerHTML = "";
-
-  for (const char of data.items) {
-    const card = document.createElement("div");
-    card.className = "character-card";
-    card.innerHTML = `
-      <img src="${char.cover_url || ""}" alt="${char.name}" onerror="this.style.display='none'"/>
-      <div class="char-info">
-        <div class="char-name">${char.name}</div>
-        <div class="char-desc">${char.description}</div>
-      </div>
-    `;
-    card.addEventListener("click", () => selectCharacter(char));
-    list.appendChild(card);
-  }
-}
-
-function selectCharacter(char) {
-  selectedCharacter = char;
-  showScreen("main-screen");
-  requestAnimationFrame(() => {
-    initRenderer(document.getElementById("avatar-canvas"));
-  });
-}
-
-// --- Connect / Disconnect ---
-document.getElementById("connect-btn").addEventListener("click", async () => {
-  if (room) {
-    await disconnect();
-  } else {
+listen('frieren:connect', async () => {
+  try {
     await connect();
+  } catch (err) {
+    updateStatusDot('error');
+    emit('frieren:state-update', { state: 'error', error: err.message }).catch(() => {});
   }
 });
 
-async function connect() {
-  updateStatus("Connecting...");
+listen('frieren:toggle-passive', async () => {
+  await togglePassive(!isPassive);
+});
 
+listen('frieren:load-vrm', async (event) => {
+  const { path } = event.payload;
   try {
-    const res = await authFetch(`/api/v1/room/?character_id=${selectedCharacter.id}`, {
-      method: "POST",
-    });
-
-    if (!res.ok) throw new Error("Failed to create room");
-    const { token, livekit_url } = await res.json();
-
-    room = new Room();
-
-    // Play incoming audio from the avatar
-    room.on(RoomEvent.TrackSubscribed, (track) => {
-      if (track.kind === Track.Kind.Audio) {
-        track.attach();
-      }
-    });
-
-    // Handle transcript and viseme data from Fern
-    room.on(RoomEvent.DataReceived, (data) => {
-      const msg = JSON.parse(new TextDecoder().decode(data));
-      if (msg.type === "transcript") updateSubtitles(msg.text);
-      if (msg.type === "viseme") updateViseme(msg.id, msg.weight);
-    });
-
-    room.on(RoomEvent.Disconnected, () => {
-      updateStatus("Disconnected");
-      document.getElementById("connect-btn").textContent = "Connect";
-      room = null;
-    });
-
-    await room.connect(livekit_url, token);
-    await room.localParticipant.setMicrophoneEnabled(true);
-
-    updateStatus("Connected");
-    document.getElementById("connect-btn").textContent = "Disconnect";
-
-    // Load the character's VRM model from Fern
-    if (selectedCharacter.model_url) {
-      await loadAvatar(selectedCharacter.model_url);
-    }
-
+    await loadVRM(convertFileSrc(path));
   } catch (err) {
-    console.error(err);
-    updateStatus("Error connecting");
-    room = null;
+    console.error('Failed to load VRM:', err);
   }
+});
+
+listen('frieren:state-query', () => {
+  emit('frieren:state-update', { state: isConnected() ? 'connected' : 'disconnected' }).catch(() => {});
+});
+
+function updateStatusDot(state) {
+  statusDot.className = `status ${state}`;
+  const labels = {
+    connected:    'Connected',
+    connecting:   'Connecting…',
+    disconnected: 'Disconnected',
+    error:        'Error',
+  };
+  statusDot.title = labels[state] ?? state;
 }
 
-async function disconnect() {
-  if (room) await room.disconnect();
-} 
+function hideAll() {
+  contextMenu.classList.remove('visible');
+  controlsPanel.classList.remove('visible');
+}
+
+function positionFloating(el, x, y) {
+  el.classList.add('visible');
+  const rect = el.getBoundingClientRect();
+  const maxX = window.innerWidth - rect.width - 4;
+  const maxY = window.innerHeight - rect.height - 4;
+  el.style.left = `${Math.max(4, Math.min(x, maxX))}px`;
+  el.style.top  = `${Math.max(4, Math.min(y, maxY))}px`;
+}
+
+canvas.addEventListener('contextmenu', (e) => {
+  e.preventDefault();
+  hideAll();
+  positionFloating(contextMenu, e.clientX, e.clientY);
+});
+
+window.addEventListener('mousedown', (e) => {
+  if (!contextMenu.contains(e.target) && !controlsPanel.contains(e.target)) {
+    hideAll();
+  }
+});
+
+document.getElementById('ctx-settings').addEventListener('click', async () => {
+  hideAll();
+  const existing = await WebviewWindow.getByLabel('ui');
+  if (existing) {
+    await existing.show();
+    await existing.setFocus();
+    return;
+  }
+  new WebviewWindow('ui', {
+    url:         'ui.html',
+    title:       'Frieren Desktop — Settings',
+    width:       460,
+    height:      580,
+    minWidth:    360,
+    minHeight:   480,
+    resizable:   true,
+    decorations: true,
+    alwaysOnTop: false,
+    center:      true,
+  });
+});
+
+document.getElementById('ctx-controls').addEventListener('click', (e) => {
+  hideAll();
+  positionFloating(controlsPanel, e.clientX, e.clientY);
+});
+
+document.getElementById('ctx-passive').addEventListener('click', async () => {
+  hideAll();
+  await togglePassive(true);
+});
+
+document.getElementById('ctx-quit').addEventListener('click', async () => {
+  await exit(0);
+});
+
+passiveBtn.addEventListener('click', async () => {
+  await togglePassive(false);
+});
+
+async function togglePassive(enable) {
+  isPassive = enable;
+  await appWindow.setIgnoreCursorEvents(enable);
+  passiveBtn.classList.toggle('visible', enable);
+  document.getElementById('ctx-passive').textContent = enable
+    ? '👁 Disable passive mode'
+    : '👁 Enable passive mode';
+
+  const opacity = enable
+    ? (document.getElementById('opacity-slider').value / 100)
+    : 1.0;
+  canvas.style.opacity = opacity;
+}
+
+// ── Opacity slider ──
+document.getElementById('opacity-slider').addEventListener('input', (e) => {
+  const val = e.target.value;
+  document.getElementById('opacity-value').textContent = `${val}%`;
+  if (isPassive) canvas.style.opacity = val / 100;
+});
+
+// ── Reset position ──
+document.getElementById('reset-btn').addEventListener('click', () => {
+  hideAll();
+  resetAvatarTransform();
+});

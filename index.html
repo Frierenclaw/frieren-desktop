@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Frieren</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body class="avatar-window">
+    <div id="avatar-container" data-tauri-drag-region>
+      <canvas id="avatar-canvas"></canvas>
+      <div id="status-dot" class="status disconnected" title="Disconnected"></div>
+      <!-- Context menu -->
+      <div id="context-menu">
+        <button class="ctx-item" id="ctx-settings">⚙ Settings</button>
+        <button class="ctx-item" id="ctx-controls">🖱 Controls</button>
+        <div class="ctx-separator"></div>
+        <button class="ctx-item" id="ctx-passive">👁 Enable passive mode</button>
+        <div class="ctx-separator"></div>
+        <button class="ctx-item danger" id="ctx-quit">✖ Quit</button>
+      </div>
+      <!-- Controls panel -->
+      <div id="controls-panel">
+        <h3>Controls</h3>
+        <div class="control-row">
+          <span class="control-label">
+            <span>Transparency</span>
+            <span id="opacity-value">100%</span>
+          </span>
+          <input type="range" id="opacity-slider" min="10" max="100" value="100" />
+        </div>
+        <button class="ctx-item" id="reset-btn" style="padding: 6px 8px;">↺ Reset position</button>
+        <h3 style="margin-top: 4px;">Shortcuts</h3>
+        <div class="shortcut-list">
+          <div class="shortcut-item"><span>Move avatar</span><kbd>Ctrl + Drag</kbd></div>
+          <div class="shortcut-item"><span>Rotate avatar</span><kbd>Ctrl + Shift + Drag</kbd></div>
+          <div class="shortcut-item"><span>Zoom</span><kbd>Ctrl + Scroll</kbd></div>
+          <div class="shortcut-item"><span>Move window</span><kbd>Drag</kbd></div>
+        </div>
+      </div>
+      <!-- Passive mode indicator -->
+      <button id="passive-btn" title="Exit passive mode">👁</button>
+    </div>
+    <script type="module" src="/src/main.js"></script>
+    <script> document.addEventListener('contextmenu', e => e.preventDefault()); </script>
+  </body>
+</html>
