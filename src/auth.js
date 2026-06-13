@@ -36,8 +36,8 @@ async function getStore() {
 export async function login(baseUrl, username, password) {
   const res = await fetch(`${baseUrl}/api/v1/auth/login`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username, password }),
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ username, password }),
   });
 
   if (!res.ok) {
