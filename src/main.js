@@ -32,7 +32,9 @@ canvas.addEventListener('mousedown', async (e) => {
   const config = await getConfig();
   if (config.avatarPath) {
     try {
-      await loadVRM(convertFileSrc(config.avatarPath));
+      const path = config.avatarPath;
+      const isRemote = path.startsWith('http://') || path.startsWith('https://');
+      await loadVRM(isRemote ? path : convertFileSrc(path));
     } catch (err) {
       console.warn('Failed to restore avatar:', err);
     }
@@ -64,7 +66,8 @@ listen('frieren:toggle-passive', async () => {
 listen('frieren:load-vrm', async (event) => {
   const { path } = event.payload;
   try {
-    await loadVRM(convertFileSrc(path));
+    const isRemote = path.startsWith('http://') || path.startsWith('https://');
+    await loadVRM(isRemote ? path : convertFileSrc(path));
   } catch (err) {
     console.error('Failed to load VRM:', err);
   }

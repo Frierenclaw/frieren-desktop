@@ -304,7 +304,7 @@ async function loadCharacters() {
 
   try {
     const baseUrl = await getBaseUrl();
-    const res = await authedFetch(`${baseUrl}/api/v1/characters/`);
+    const res = await authedFetch(`${baseUrl}/api/v1/hub/all`);
     if (!res.ok) throw new Error(`${res.status}`);
 
     const data = await res.json();
