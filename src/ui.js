@@ -13,7 +13,7 @@
 import { listen, emit, emitTo } from '@tauri-apps/api/event';
 import { open as openDialog }   from '@tauri-apps/plugin-dialog';
 
-import { login, logout, isLoggedIn, getBaseUrl } from './auth.js';
+import { login, logout, isLoggedIn, getBaseUrl, authedFetch } from './auth.js';
 import {
   getConfig,
   saveConfig,
@@ -21,6 +21,7 @@ import {
   addInstance,
   setSelectedInstance,
   setAvatarPath,
+  setCharacterId,
 } from './config.js';
 
 // ─────────────────────────────────────────────────────────────
@@ -52,6 +53,8 @@ const disconnectBtn        = $('disconnect-btn');
 
 const avatarInfo           = $('avatar-info');
 const loadVrmBtn           = $('load-vrm-btn');
+const characterStatus      = $('character-status');
+const characterList        = $('character-list');
 
 // ─────────────────────────────────────────────────────────────
 // Bootstrap
@@ -60,6 +63,7 @@ const loadVrmBtn           = $('load-vrm-btn');
 async function init() {
   await renderInstances();
   await renderAuthState();
+  await loadCharacters();   
 
   // Ask the main window for current connection state
   await emit('frieren:state-query');
@@ -155,6 +159,7 @@ loginBtn.addEventListener('click', async () => {
     await login(baseUrl, username, password);
     passwordInput.value = '';
     await renderAuthState();
+    await loadCharacters();   
   } catch (err) {
     showAuthError(err.message);
   } finally {
@@ -166,6 +171,7 @@ loginBtn.addEventListener('click', async () => {
 logoutBtn.addEventListener('click', async () => {
   await logout();
   await renderAuthState();
+  await loadCharacters(); 
   // If we were connected, the session is now invalid
   if (!disconnectBtn.classList.contains('hidden')) {
     await sendCommand('frieren:disconnect');
@@ -279,6 +285,77 @@ loadVrmBtn.addEventListener('click', async () => {
 async function sendCommand(eventName, payload = {}) {
   // emitTo sends only to the 'main' label window
   await emitTo('main', eventName, payload);
+}
+
+// ─────────────────────────────────────────────────────────────
+// Load Characters
+// ─────────────────────────────────────────────────────────────
+
+async function loadCharacters() {
+  const loggedIn = await isLoggedIn();
+  if (!loggedIn) {
+    characterStatus.textContent = 'Log in to see characters';
+    characterList.innerHTML = '';
+    return;
+  }
+
+  characterStatus.textContent = 'Loading characters…';
+  characterList.innerHTML = '';
+
+  try {
+    const baseUrl = await getBaseUrl();
+    const res = await authedFetch(`${baseUrl}/api/v1/characters/`);
+    if (!res.ok) throw new Error(`${res.status}`);
+
+    const data = await res.json();
+    const characters = data.items ?? [];
+
+    if (characters.length === 0) {
+      characterStatus.textContent = 'No characters found.';
+      return;
+    }
+
+    characterStatus.textContent = `${characters.length} character(s) available`;
+
+    const config = await getConfig();
+
+    characters.forEach((char) => {
+      const card = document.createElement('div');
+      card.className = 'character-card' + (char.id === config.characterId ? ' selected' : '');
+      card.dataset.id = char.id;
+
+      // Cover image or placeholder emoji
+      const cover = char.cover_url
+        ? `<img class="character-cover" src="${char.cover_url}" alt="" onerror="this.outerHTML='<div class=\\'character-cover placeholder\\'>🦋</div>'" />`
+        : `<div class="character-cover placeholder">🦋</div>`;
+
+      card.innerHTML = `
+        ${cover}
+        <div class="character-info">
+          <div class="character-name">${char.name}</div>
+          <div class="character-desc">${char.description ?? ''}</div>
+        </div>
+      `;
+
+      card.addEventListener('click', async () => {
+        // Deselect all
+        characterList.querySelectorAll('.character-card').forEach(c => c.classList.remove('selected'));
+        card.classList.add('selected');
+        await setCharacterId(char.id);
+
+        // If the character has a model_url, auto-load it
+        if (char.model_url) {
+          await sendCommand('frieren:load-vrm', { path: char.model_url });
+          await setAvatarPath(char.model_url);
+          avatarInfo.textContent = `Loaded: ${char.name}`;
+        }
+      });
+
+      characterList.appendChild(card);
+    });
+  } catch (err) {
+    characterStatus.textContent = `Error: ${err.message}`;
+  }
 }
 
 // ─────────────────────────────────────────────────────────────

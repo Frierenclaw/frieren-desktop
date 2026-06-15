@@ -11,12 +11,12 @@ import { load } from '@tauri-apps/plugin-store';
 
 // ── Defaults ─────────────────────────────────────────────────
 const DEFAULT_CONFIG = {
-  // neadond's public instance is the default
   instances: [
     { name: 'Default (frieren.ai)', url: 'https://frieren.ai' },
   ],
   selectedInstance: 0,
   avatarPath: null,
+  characterId: null,
 };
 
 /** @type {import('@tauri-apps/plugin-store').Store | null} */
@@ -83,5 +83,11 @@ export async function setSelectedInstance(idx) {
 export async function setAvatarPath(path) {
   const config      = await getConfig();
   config.avatarPath  = path;
+  await saveConfig(config);
+}
+
+export async function setCharacterId(id) {
+  const config = await getConfig();
+  config.characterId = id;
   await saveConfig(config);
 }
