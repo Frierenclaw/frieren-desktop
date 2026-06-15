@@ -59,6 +59,10 @@ listen('frieren:connect', async () => {
   }
 });
 
+listen('frieren:disconnect', async () => {
+  await disconnect();
+});
+
 listen('frieren:toggle-passive', async () => {
   await togglePassive(!isPassive);
 });
