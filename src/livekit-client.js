@@ -3,6 +3,7 @@ import {
   RoomEvent,
   ConnectionState,
   DisconnectReason,
+  Track,
 } from 'livekit-client';
 import { authedFetch, getBaseUrl } from './auth.js';
 import { getConfig } from './config.js';
@@ -61,7 +62,7 @@ export async function connect() {
   });
 
   _room.on(RoomEvent.Disconnected, (reason) => {
-    const state = reason === DisconnectReason.UNKNOWN_REASON ? 'error' : 'disconnected';
+    const state = reason === DisconnectReason.CLIENT_INITIATED ? 'disconnected' : 'error';
     _emitState(state);
     _room = null;
   });
@@ -84,6 +85,18 @@ export async function connect() {
     } catch {
       // Non-JSON or unknown payload
     }
+  });
+
+  _room.on(RoomEvent.TrackSubscribed, (track, publication, participant) => {
+    if (track.kind === Track.Kind.Audio) {
+      const audioElement = track.attach();
+      audioElement.id = `livekit-audio-${participant.sid}`;
+      document.body.appendChild(audioElement);
+    }
+  });
+
+  _room.on(RoomEvent.TrackUnsubscribed, (track) => {
+    track.detach().forEach(el => el.remove());
   });
 
   await _room.connect(livekitUrl, token);

@@ -15,9 +15,9 @@ body.avatar-window {
 }
 
 #avatar-container {
-  position: relative;
-  width: 100%;
-  height: 100%;
+  position: absolute;
+  width: 280px;
+  height: 480px;
 }
 
 #avatar-canvas {
@@ -28,6 +28,21 @@ body.avatar-window {
   cursor: grab;
 }
 #avatar-canvas:active { cursor: grabbing; }
+
+/* ── Resize outline (shown during Ctrl+scroll) ── */
+#resize-outline {
+  position: absolute;
+  display: none;
+  border: 2px solid #a78bfa;
+  border-radius: 8px;
+  background: rgba(167, 139, 250, 0.06);
+  box-shadow:
+    0 0 12px 2px rgba(167, 139, 250, 0.55),
+    0 0 28px 6px rgba(167, 139, 250, 0.3);
+  pointer-events: none;
+  z-index: 998;
+}
+#resize-outline.visible { display: block; }
 
 /* ── Status dot (top-right corner) ── */
 .status {

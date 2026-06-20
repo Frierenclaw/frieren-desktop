@@ -32,7 +32,7 @@ export default defineConfig({
     // Tauri on Windows uses NSIS / WiX which can struggle with sourcemaps
     sourcemap: process.env.TAURI_ENV_DEBUG === 'true' ? 'inline' : false,
     // Tauri needs a non-module script for the main entry on some targets
-    target: ['es2021', 'chrome105', 'safari14'],
+    target: ['es2022', 'chrome110', 'safari16'],
     minify: process.env.TAURI_ENV_DEBUG === 'true' ? false : 'esbuild',
   },
 
