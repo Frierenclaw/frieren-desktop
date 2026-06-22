@@ -468,9 +468,11 @@ export function handleResize() {
 // ─────────────────────────────────────────────────────────────
 // Drag controls
 // ─────────────────────────────────────────────────────────────
-let isDragging = false;
-let dragStartX = 0;
-let dragStartY = 0;
+let isDragging   = false;
+let dragStartX   = 0;
+let dragStartY   = 0;
+let dragButton   = 0;
+let dragShift    = false;
 let _onDragStart = null;
 let _onDragEnd   = null;
 let _onDragMove  = null;
@@ -494,11 +496,13 @@ export function onAvatarResizeWheel(onWheel, onEnd) {
   _onResizeEnd   = onEnd;
 }
 
-export function beginAvatarDrag(clientX, clientY) {
+export function beginAvatarDrag(clientX, clientY, button = 0, shiftKey = false) {
   if (!currentVRM) return;
   isDragging = true;
   dragStartX = clientX;
   dragStartY = clientY;
+  dragButton = button;
+  dragShift  = shiftKey;
   _onDragStart?.();
 }
 
@@ -549,12 +553,17 @@ export function initDragControls(canvas) {
     if (!isDragging || !currentVRM) return;
     const dx = e.clientX - dragStartX;
     const dy = e.clientY - dragStartY;
-    if (e.shiftKey) {
+
+    if (dragButton === 1 && dragShift) {
       currentVRM.scene.rotation.y += dx * 0.005;
       currentVRM.scene.rotation.x += dy * 0.005;
+    } else if (dragButton === 0 && dragShift) {
+      currentVRM.scene.position.x += dx * 0.002;
+      currentVRM.scene.position.y -= dy * 0.002;
     } else {
       _onDragMove?.(dx, dy);
     }
+
     dragStartX = e.clientX; dragStartY = e.clientY;
   });
   window.addEventListener('mouseup', () => {
