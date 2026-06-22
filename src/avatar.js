@@ -1,6 +1,11 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
+import {
+  VRMAnimationLoaderPlugin,
+  VRMLookAtQuaternionProxy,
+  createVRMAnimationClip,
+} from '@pixiv/three-vrm-animation';
 import { EDGE_TTS_VISEME_MAP, MOUTH_EXPRESSIONS } from './visemes.js';
 
 // ── Module state ──────────────────────────────────────────────
@@ -10,6 +15,12 @@ let camera     = null;
 let clock      = null;
 let currentVRM = null;
 let animFrameId = null;
+
+// ── Gesture clip (.vrma) state ──────────────────────────────────
+let mixer             = null;
+let currentAction     = null;
+let gesturePlaying    = false;
+const vrmAnimationCache = new Map();
 
 // Expressions that actually exist in the loaded model
 let availableExpressions = new Set();
@@ -73,11 +84,20 @@ export function initAvatar(canvas) {
 }
 
 // ─────────────────────────────────────────────────────────────
+// Shared GLTFLoader
+// ─────────────────────────────────────────────────────────────
+function createGLTFLoader() {
+  const loader = new GLTFLoader();
+  loader.register((parser) => new VRMLoaderPlugin(parser));
+  loader.register((parser) => new VRMAnimationLoaderPlugin(parser));
+  return loader;
+}
+
+// ─────────────────────────────────────────────────────────────
 // VRM Loading
 // ─────────────────────────────────────────────────────────────
 export async function loadVRM(url) {
-  const loader = new GLTFLoader();
-  loader.register((parser) => new VRMLoaderPlugin(parser));
+  const loader = createGLTFLoader();
 
   return new Promise((resolve, reject) => {
     loader.load(
@@ -102,6 +122,12 @@ export async function loadVRM(url) {
         currentVRM = vrm;
         scene.add(vrm.scene);
 
+        const lookAtQuatProxy = new VRMLookAtQuaternionProxy(vrm.lookAt);
+        lookAtQuatProxy.name = 'lookAtQuaternionProxy';
+        vrm.scene.add(lookAtQuatProxy);
+
+        frameAvatar();
+
         // Discover which expressions this model actually supports
         availableExpressions = new Set(
           Object.keys(vrm.expressionManager?.expressionMap ?? {})
@@ -117,6 +143,10 @@ export async function loadVRM(url) {
         nextBlinkDelay = 2.5;
         currentVisemeTarget = null;
 
+        mixer = new THREE.AnimationMixer(vrm.scene);
+        currentAction  = null;
+        gesturePlaying = false;
+
         resolve(vrm);
       },
       (progress) => {
@@ -129,6 +159,30 @@ export async function loadVRM(url) {
 }
 
 export function hasVRM() { return currentVRM !== null; }
+
+// ─────────────────────────────────────────────────────────────
+// Camera framing
+// ─────────────────────────────────────────────────────────────
+const FRAME_MARGIN = 1.15; // extra headroom/footroom so the model isn't edge-to-edge
+
+function frameAvatar() {
+  if (!currentVRM || !camera) return;
+
+  const box = new THREE.Box3().setFromObject(currentVRM.scene);
+  if (box.isEmpty()) return;
+
+  const height = box.max.y - box.min.y;
+  const centerY = (box.max.y + box.min.y) / 2;
+
+  // Distance needed for the model's full height to fit the camera's
+  // vertical FOV, with FRAME_MARGIN of breathing room top/bottom.
+  const vFovRad = (camera.fov * Math.PI) / 180;
+  const distance = (height * FRAME_MARGIN) / (2 * Math.tan(vFovRad / 2));
+
+  camera.position.set(0, centerY, distance);
+  camera.lookAt(new THREE.Vector3(0, centerY, 0));
+  camera.updateProjectionMatrix();
+}
 
 // ─────────────────────────────────────────────────────────────
 // Visemes
@@ -147,6 +201,63 @@ export function setExpression(name, value) {
 }
 
 // ─────────────────────────────────────────────────────────────
+// Gesture clips (.vrma)
+// ─────────────────────────────────────────────────────────────
+async function fetchVRMAnimation(url) {
+  if (vrmAnimationCache.has(url)) return vrmAnimationCache.get(url);
+
+  const loader = createGLTFLoader();
+  const gltf = await loader.loadAsync(url);
+  const vrmAnimation = gltf.userData.vrmAnimations?.[0];
+  if (!vrmAnimation) throw new Error(`No VRM animation found in ${url}`);
+
+  vrmAnimationCache.set(url, vrmAnimation);
+  return vrmAnimation;
+}
+
+export async function loadAnimationClip(url) {
+  if (!currentVRM) throw new Error('Load an avatar before loading animation clips.');
+  const vrmAnimation = await fetchVRMAnimation(url);
+  return createVRMAnimationClip(vrmAnimation, currentVRM);
+}
+
+export function playAnimationClip(clip, { loop = false, fadeSeconds = 0.25, onFinished } = {}) {
+  if (!mixer || !currentVRM) return null;
+
+  currentAction?.fadeOut(fadeSeconds);
+
+  const action = mixer.clipAction(clip);
+  action.reset();
+  action.setLoop(loop ? THREE.LoopRepeat : THREE.LoopOnce, loop ? Infinity : 1);
+  action.clampWhenFinished = !loop;
+  action.fadeIn(fadeSeconds).play();
+
+  currentAction  = action;
+  gesturePlaying = true;
+
+  if (!loop) {
+    const handleFinished = (e) => {
+      if (e.action !== action) return;
+      mixer.removeEventListener('finished', handleFinished);
+      gesturePlaying = false;
+      if (currentAction === action) currentAction = null;
+      onFinished?.();
+    };
+    mixer.addEventListener('finished', handleFinished);
+  }
+
+  return action;
+}
+
+export function stopAnimationClip(fadeSeconds = 0.25) {
+  currentAction?.fadeOut(fadeSeconds);
+  currentAction  = null;
+  gesturePlaying = false;
+}
+
+export function isGesturePlaying() { return gesturePlaying; }
+
+// ─────────────────────────────────────────────────────────────
 // Render loop
 // ─────────────────────────────────────────────────────────────
 function startRenderLoop() {
@@ -161,6 +272,7 @@ function startRenderLoop() {
       applyIdleWeightShift(delta);
       applyBlink(delta);
       smoothVisemes(delta);
+      mixer?.update(delta);
       currentVRM.update(delta);
     }
     renderer.render(scene, camera);
@@ -172,6 +284,7 @@ function startRenderLoop() {
 // Idle: breathing
 // ─────────────────────────────────────────────────────────────
 function applyIdleBreathing(delta) {
+  if (gesturePlaying) return;
   breathTime += delta;
   const v = Math.sin(breathTime * 0.8) * 0.04; // 0.04 rad ≈ 2.3° — visible
 
@@ -192,6 +305,7 @@ function applyIdleBreathing(delta) {
 // Idle: head sway
 // ─────────────────────────────────────────────────────────────
 function applyIdleHeadSway(delta) {
+  if (gesturePlaying) return;
   swayTime += delta;
   const h = currentVRM?.humanoid;
   if (!h) return;
@@ -213,6 +327,7 @@ function applyIdleHeadSway(delta) {
 // ─────────────────────────────────────────────────────────────
 
 function applyIdleArmSway(delta) {
+  if (gesturePlaying) return;
   armSwayTime += delta;
   const h = currentVRM?.humanoid;
   if (!h) return;
@@ -260,6 +375,7 @@ function applyIdleArmSway(delta) {
 }
 
 function applyIdleWeightShift(delta) {
+  if (gesturePlaying) return;
   weightShiftTime += delta;
   const h = currentVRM?.humanoid;
   if (!h) return;
@@ -341,7 +457,7 @@ function lerp(a, b, t) { return a + (b - a) * Math.min(t, 1); }
 // ─────────────────────────────────────────────────────────────
 // Resize
 // ─────────────────────────────────────────────────────────────
-function handleResize() {
+export function handleResize() {
   if (!renderer || !camera) return;
   const canvas = renderer.domElement;
   renderer.setSize(canvas.clientWidth, canvas.clientHeight, false);
@@ -355,39 +471,100 @@ function handleResize() {
 let isDragging = false;
 let dragStartX = 0;
 let dragStartY = 0;
-let modelOffsetX = 0;
-let modelOffsetY = 0;
+let _onDragStart = null;
+let _onDragEnd   = null;
+let _onDragMove  = null;
+let _onResizeWheel = null;
+let _onResizeEnd    = null;
+
+export function onAvatarDrag(onStart, onEnd) {
+  _onDragStart = onStart;
+  _onDragEnd   = onEnd;
+}
+
+// Fires with (dx, dy) in CSS px during a plain Ctrl-drag (no Shift)
+export function onAvatarDragMove(cb) {
+  _onDragMove = cb;
+}
+
+// Fires with deltaY during Ctrl+scroll (resize the container). onEnd
+// fires once scrolling/Ctrl stops, so main.js knows when to commit.
+export function onAvatarResizeWheel(onWheel, onEnd) {
+  _onResizeWheel = onWheel;
+  _onResizeEnd   = onEnd;
+}
+
+export function beginAvatarDrag(clientX, clientY) {
+  if (!currentVRM) return;
+  isDragging = true;
+  dragStartX = clientX;
+  dragStartY = clientY;
+  _onDragStart?.();
+}
+
+let resizeEndTimer = null;
+const RESIZE_END_DELAY_MS = 250;
+
+let resizeInProgress = false;
+
+function handleZoomOrResizeWheel(e) {
+  if (e.shiftKey) {
+    // Ctrl+Shift+scroll: digital camera zoom, frame stays fixed
+    camera.position.z = Math.max(0.5, Math.min(5, camera.position.z + e.deltaY * 0.001));
+    return;
+  }
+
+  // Ctrl+scroll: resize the canvas/AABB itself
+  resizeInProgress = true;
+  _onResizeWheel?.(e.deltaY);
+  clearTimeout(resizeEndTimer);
+  resizeEndTimer = setTimeout(() => { resizeInProgress = false; _onResizeEnd?.(); }, RESIZE_END_DELAY_MS);
+}
 
 export function initDragControls(canvas) {
-  canvas.addEventListener('mousedown', (e) => {
-    if (e.ctrlKey) { isDragging = true; dragStartX = e.clientX; dragStartY = e.clientY; e.preventDefault(); }
-  });
   canvas.addEventListener('wheel', (e) => {
     if (!e.ctrlKey || !currentVRM) return;
     e.preventDefault();
-    camera.position.z = Math.max(0.5, Math.min(5, camera.position.z + e.deltaY * 0.001));
+    e.stopPropagation();
+    handleZoomOrResizeWheel(e);
   }, { passive: false });
+
+  // Once a resize gesture starts on the canvas, keep tracking it on
+  // window too — the canvas itself may shrink out from under the
+  // cursor mid-gesture, which would otherwise stall the resize.
+  window.addEventListener('wheel', (e) => {
+    if (!resizeInProgress || !e.ctrlKey || e.shiftKey) return;
+    e.preventDefault();
+    handleZoomOrResizeWheel(e);
+  }, { passive: false });
+
+  window.addEventListener('keyup', (e) => {
+    if (e.key === 'Control') {
+      clearTimeout(resizeEndTimer);
+      if (resizeInProgress) { resizeInProgress = false; _onResizeEnd?.(); }
+    }
+  });
+
   window.addEventListener('mousemove', (e) => {
     if (!isDragging || !currentVRM) return;
-    const dx = (e.clientX - dragStartX) * 0.005;
-    const dy = (e.clientY - dragStartY) * 0.005;
+    const dx = e.clientX - dragStartX;
+    const dy = e.clientY - dragStartY;
     if (e.shiftKey) {
-      currentVRM.scene.rotation.y += dx;
-      currentVRM.scene.rotation.x += dy;
+      currentVRM.scene.rotation.y += dx * 0.005;
+      currentVRM.scene.rotation.x += dy * 0.005;
     } else {
-      modelOffsetX += dx; modelOffsetY -= dy;
-      currentVRM.scene.position.set(modelOffsetX, modelOffsetY, 0);
+      _onDragMove?.(dx, dy);
     }
     dragStartX = e.clientX; dragStartY = e.clientY;
   });
-  window.addEventListener('mouseup', () => { isDragging = false; });
+  window.addEventListener('mouseup', () => {
+    if (isDragging) { isDragging = false; _onDragEnd?.(); }
+  });
 }
 
 export function resetAvatarTransform() {
   if (!currentVRM) return;
   currentVRM.scene.position.set(0, 0, 0);
   currentVRM.scene.rotation.set(0, 0, 0);
-  modelOffsetX = 0; modelOffsetY = 0;
-  camera.position.set(0, 1.0, 2.3);
-  camera.lookAt(new THREE.Vector3(0, 1.0, 0));
+  frameAvatar();
 }
