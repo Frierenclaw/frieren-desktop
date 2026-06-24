@@ -6,7 +6,7 @@ import {
   VRMLookAtQuaternionProxy,
   createVRMAnimationClip,
 } from '@pixiv/three-vrm-animation';
-import { EDGE_TTS_VISEME_MAP, MOUTH_EXPRESSIONS } from './visemes.js';
+import { isValidViseme, MOUTH_EXPRESSIONS } from './visemes.js';
 
 // ── Module state ──────────────────────────────────────────────
 let renderer   = null;
@@ -189,8 +189,13 @@ function frameAvatar() {
 // ─────────────────────────────────────────────────────────────
 export function applyViseme(data) {
   if (!currentVRM) return;
-  const name = EDGE_TTS_VISEME_MAP[data.viseme_id] ?? null;
-  currentVisemeTarget = (name && availableExpressions.has(name)) ? name : null;
+  // Fern already resolves the spoken word to a VRM expression name (see
+  // visemes.js), so we just validate it against both the viseme set and the
+  // expressions the loaded model actually supports.
+  const name = data?.viseme;
+  currentVisemeTarget = (isValidViseme(name) && availableExpressions.has(name))
+    ? name
+    : null;
   if (visemeResetTimer) clearTimeout(visemeResetTimer);
   visemeResetTimer = setTimeout(() => { currentVisemeTarget = null; }, VISEME_HOLD_MS);
 }

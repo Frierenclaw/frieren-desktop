@@ -1,5 +1,5 @@
 /**
- * auth.js — JWT authentication + auto-refresh for Heiter
+ * auth.js — JWT authentication + auto-refresh for Fern
  *
  * Endpoints (from neadond):
  *   POST /api/v1/auth/login   { username, password }

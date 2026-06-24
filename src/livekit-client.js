@@ -6,16 +6,50 @@ import {
   Track,
 } from 'livekit-client';
 import { authedFetch, getBaseUrl } from './auth.js';
-import { getConfig } from './config.js';
+import { getConfig, getWakeWords } from './config.js';
 
+// ── Module state ──────────────────────────────────────────────
 let _room = null;
 let _onVisemeCb      = null;
 let _onStateChangeCb = null;
 let _onErrorCb       = null;
+let _onAudioReadyCb  = null;  // fired once audio playback is unblocked
 
 export function onViseme(cb)      { _onVisemeCb = cb; }
 export function onStateChange(cb) { _onStateChangeCb = cb; }
 export function onError(cb)       { _onErrorCb = cb; }
+
+/**
+ * Register a callback invoked once audio playback is confirmed unblocked
+ * (i.e. Chromium's autoplay policy has been satisfied by a user gesture).
+ * @param {() => void} cb
+ */
+export function onAudioReady(cb) { _onAudioReadyCb = cb; }
+
+// ── Audio unblock ──────────────────────────────────────────────
+// WebView2/Chromium requires a user gesture before audio can play.
+// LiveKit's Room.startAudio() attempts to unmute the AudioContext and
+// resume any suspended <audio> elements. We call it after connect, on
+// every AudioPlaybackStatusChanged event, and expose tryUnblockAudio
+// so main.js can wire it to a canvas click as a fallback gesture.
+
+export function tryUnblockAudio() {
+  if (_room?.canPlaybackAudio) return false; // already unblocked
+  _room?.startAudio();
+  return true;
+}
+
+export function canPlaybackAudio() {
+  return !!_room?.canPlaybackAudio;
+}
+
+function _handleAudioStatusChanged(playable) {
+  if (playable) {
+    _onAudioReadyCb?.();
+  }
+}
+
+// ── Room token ────────────────────────────────────────────────
 
 async function getSessionToken() {
   const baseUrl = await getBaseUrl();
@@ -24,8 +58,17 @@ async function getSessionToken() {
   const config = await getConfig();
   if (!config.characterId) throw new Error('No character selected. Please select a character in settings.');
 
-  const res = await authedFetch(`${baseUrl}/api/v1/room/?character_id=${config.characterId}`, {
+  // Fern's CreateRoomDTO expects a JSON body:
+  //   { "character_id": <uuid>, "wake_words": [...] }
+  // wake_words drives the WakePhraseUserTurnStartStrategy in the bot pipeline,
+  // so the bot won't start listening until a phrase is spoken.
+  const wakeWords = await getWakeWords();
+  const res = await authedFetch(`${baseUrl}/api/v1/room/`, {
     method: 'POST',
+    body: JSON.stringify({
+      character_id: config.characterId,
+      wake_words:   wakeWords,
+    }),
   });
 
   if (!res.ok) {
@@ -39,6 +82,8 @@ async function getSessionToken() {
     token:      data.token,
   };
 }
+
+// ── Connect / disconnect ───────────────────────────────────────
 
 export async function connect() {
   if (_room) await disconnect();
@@ -59,6 +104,9 @@ export async function connect() {
 
   _room.on(RoomEvent.Connected, () => {
     _emitState('connected');
+    // Attempt to unblock audio immediately after connecting.
+    // This succeeds when the page already has a user gesture context.
+    _room.startAudio();
   });
 
   _room.on(RoomEvent.Disconnected, (reason) => {
@@ -75,11 +123,15 @@ export async function connect() {
     _emitState('connected');
   });
 
+  // Chromium fires this when autoplay policy changes (e.g. after a click).
+  // If playback becomes allowed, notify the avatar window.
+  _room.on(RoomEvent.AudioPlaybackStatusChanged, _handleAudioStatusChanged);
+
   _room.on(RoomEvent.DataReceived, (payload) => {
     try {
       const text = new TextDecoder().decode(payload);
       const data = JSON.parse(text);
-      if (data.type === 'viseme' && _onVisemeCb) {
+      if (data.type === 'vrm_viseme' && _onVisemeCb) {
         _onVisemeCb(data);
       }
     } catch {

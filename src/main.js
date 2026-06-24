@@ -6,7 +6,7 @@ import {
   initAvatar, loadVRM, applyViseme, initDragControls, resetAvatarTransform,
   onAvatarDrag, onAvatarDragMove, beginAvatarDrag, onAvatarResizeWheel, handleResize,
 } from './avatar.js';
-import { connect, disconnect, onViseme, onStateChange, isConnected } from './livekit-client.js';
+import { connect, disconnect, onViseme, onStateChange, isConnected, tryUnblockAudio, onAudioReady } from './livekit-client.js';
 import { getConfig } from './config.js';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 
@@ -167,6 +167,10 @@ onAvatarDragMove((dx, dy) => {
 });
 
 canvas.addEventListener('mousedown', (e) => {
+  // Any click on the canvas serves as a user gesture for Chromium's
+  // autoplay policy, unblocking TTS audio playback.
+  tryUnblockAudio();
+
   if (e.ctrlKey) {
     beginAvatarDrag(e.clientX, e.clientY, e.button, e.shiftKey);
     e.preventDefault();

@@ -2,9 +2,11 @@
  * config.js — Persistent app configuration via tauri-plugin-store
  *
  * Stores:
- *   - instances[]    : list of { name, url } Heiter/Fern instances
+ *   - instances[]    : list of { name, url } Fern instances
  *   - selectedInstance : index into instances[]
  *   - avatarPath     : last loaded VRM file path
+ *   - characterId    : selected character UUID
+ *   - wakeWords[]    : wake phrases sent to Fern on connect (e.g. "Hey Frieren")
  */
 
 import { load } from '@tauri-apps/plugin-store';
@@ -17,6 +19,7 @@ const DEFAULT_CONFIG = {
   selectedInstance: 0,
   avatarPath: null,
   characterId: null,
+  wakeWords: ['Hey Frieren'],
 };
 
 /** @type {import('@tauri-apps/plugin-store').Store | null} */
@@ -90,4 +93,49 @@ export async function setCharacterId(id) {
   const config = await getConfig();
   config.characterId = id;
   await saveConfig(config);
+}
+
+// ── Wake words ───────────────────────────────────────────────
+
+/**
+ * Returns the stored wake words (always an array).
+ * @returns {Promise<string[]>}
+ */
+export async function getWakeWords() {
+  const config = await getConfig();
+  return Array.isArray(config.wakeWords) ? config.wakeWords : [];
+}
+
+/**
+ * Add a wake word if it isn't already present (case-insensitive). Returns the
+ * updated list. Empty/whitespace values are ignored.
+ * @param {string} word
+ * @returns {Promise<string[]>}
+ */
+export async function addWakeWord(word) {
+  const trimmed = (word ?? '').trim();
+  if (!trimmed) return getWakeWords();
+
+  const config = await getConfig();
+  config.wakeWords = config.wakeWords ?? [];
+  const lower = trimmed.toLowerCase();
+  if (config.wakeWords.some((w) => w.toLowerCase() === lower)) {
+    return config.wakeWords;
+  }
+  config.wakeWords.push(trimmed);
+  await saveConfig(config);
+  return config.wakeWords;
+}
+
+/**
+ * Remove a wake word by exact, case-insensitive match. Returns the updated list.
+ * @param {string} word
+ * @returns {Promise<string[]>}
+ */
+export async function removeWakeWord(word) {
+  const config = await getConfig();
+  const lower = (word ?? '').toLowerCase();
+  config.wakeWords = (config.wakeWords ?? []).filter((w) => w.toLowerCase() !== lower);
+  await saveConfig(config);
+  return config.wakeWords;
 }
