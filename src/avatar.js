@@ -6,7 +6,7 @@ import {
   VRMLookAtQuaternionProxy,
   createVRMAnimationClip,
 } from '@pixiv/three-vrm-animation';
-import { EDGE_TTS_VISEME_MAP, MOUTH_EXPRESSIONS } from './visemes.js';
+import { isValidViseme, MOUTH_EXPRESSIONS } from './visemes.js';
 
 // ── Module state ──────────────────────────────────────────────
 let renderer   = null;
@@ -30,6 +30,10 @@ let currentVisemeTarget = null;
 let visemeResetTimer    = null;
 const VISEME_HOLD_MS    = 100;
 const VISEME_BLEND_SPEED = 20;
+
+// Throttle for the smoothVisemes debug log (seconds between snapshots).
+const VISEME_LOG_INTERVAL = 0.5;
+let   _visemeLogAccumulator = 0;
 
 // ── Idle animation timers ─────────────────────────────────────
 let breathTime = 0;
@@ -188,9 +192,30 @@ function frameAvatar() {
 // Visemes
 // ─────────────────────────────────────────────────────────────
 export function applyViseme(data) {
-  if (!currentVRM) return;
-  const name = EDGE_TTS_VISEME_MAP[data.viseme_id] ?? null;
-  currentVisemeTarget = (name && availableExpressions.has(name)) ? name : null;
+  if (!currentVRM) {
+    console.warn('[viseme] applyViseme called but no VRM is loaded');
+    return;
+  }
+  // Fern already resolves the spoken word to a VRM expression name (see
+  // visemes.js), so we just validate it against both the viseme set and the
+  // expressions the loaded model actually supports.
+  const name = data?.viseme;
+
+  if (!isValidViseme(name)) {
+    console.debug('[viseme] ignored — not a valid viseme name:', name, 'data:', data);
+    return;
+  }
+
+  if (!availableExpressions.has(name)) {
+    console.warn(
+      '[viseme] "%s" is a valid viseme but the loaded model does not expose it. '
+      + 'Available mouth expressions:', name,
+      MOUTH_EXPRESSIONS.filter((m) => availableExpressions.has(m)),
+    );
+    return;
+  }
+
+  currentVisemeTarget = name;
   if (visemeResetTimer) clearTimeout(visemeResetTimer);
   visemeResetTimer = setTimeout(() => { currentVisemeTarget = null; }, VISEME_HOLD_MS);
 }
@@ -444,11 +469,27 @@ function smoothVisemes(delta) {
   const em = currentVRM?.expressionManager;
   if (!em) return;
   const speed = VISEME_BLEND_SPEED * delta;
+
+  // Snapshot the applied mouth expression values for an occasional debug log.
+  // Throttled so we don't flood the console every frame.
+  let shouldLog = false;
+  _visemeLogAccumulator += delta;
+  if (_visemeLogAccumulator >= VISEME_LOG_INTERVAL) {
+    _visemeLogAccumulator = 0;
+    shouldLog = currentVisemeTarget !== null;
+  }
+
+  const snapshot = shouldLog ? {} : null;
   for (const name of MOUTH_EXPRESSIONS) {
     if (!availableExpressions.has(name)) continue;
     const current = em.getValue(name) ?? 0;
     const target  = name === currentVisemeTarget ? 1.0 : 0.0;
     em.setValue(name, lerp(current, target, speed));
+    if (snapshot) snapshot[name] = +em.getValue(name)?.toFixed(2);
+  }
+
+  if (snapshot) {
+    console.debug('[viseme] target=%s applied=%o', currentVisemeTarget, snapshot);
   }
 }
 

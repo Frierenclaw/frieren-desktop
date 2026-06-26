@@ -435,3 +435,54 @@ button.btn-danger:hover { background: #991b1b; }
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* ── Wake words chips ── */
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+  min-height: 4px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 4px 4px 10px;
+  background: #1a1040;
+  border: 1px solid #2e2e50;
+  border-radius: 12px;
+  font-size: 12px;
+  color: #c4b5fd;
+}
+
+.chip-label {
+  white-space: nowrap;
+}
+
+.chip-remove {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: rgba(124, 58, 237, 0.25);
+  color: #c4b5fd;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.chip-remove:hover {
+  background: #7f1d1d;
+  color: #fca5a5;
+}
+
+/* Keep the input in a wake-words row aligned with the others */
+#wake-words-section .field-row input { flex: 1; margin-bottom: 0; }
+#wake-words-section .field-row button { flex-shrink: 0; }
