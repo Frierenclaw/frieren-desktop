@@ -207,6 +207,10 @@ onStateChange((state) => {
   emit('frieren:state-update', { state }).catch(() => {});
 });
 
+listen('frieren:bounds-refreshed', () => {
+  cachedWindowOrigin = null;
+});
+
 listen('frieren:connect', async () => {
   try {
     await connect();

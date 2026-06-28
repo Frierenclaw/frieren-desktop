@@ -72,25 +72,47 @@ fn get_cursor_position(window: tauri::Window) -> Result<(f64, f64), String> {
         .map_err(|e| e.to_string())
 }
 
-fn fit_main_window_to_monitor(app: &tauri::AppHandle) -> Result<(), String> {
+fn fit_main_window_to_all_monitors(app: &tauri::AppHandle) -> Result<(), String> {
     let win = app
         .get_webview_window("main")
         .ok_or_else(|| "main window not found".to_string())?;
 
-    let monitor = win
-        .primary_monitor()
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| "No primary monitor detected".to_string())?;
+    let monitors = win.available_monitors().map_err(|e| e.to_string())?;
 
-    let size: &PhysicalSize<u32> = monitor.size();
-    let position: &PhysicalPosition<i32> = monitor.position();
+    if monitors.is_empty() {
+        return Err("No monitors detected".to_string());
+    }
 
-    win.set_position(tauri::Position::Physical(*position))
+    let mut min_x = i32::MAX;
+    let mut min_y = i32::MAX;
+    let mut max_x = i32::MIN;
+    let mut max_y = i32::MIN;
+
+    for monitor in &monitors {
+        let pos  = monitor.position();
+        let size = monitor.size();
+        min_x = min_x.min(pos.x);
+        min_y = min_y.min(pos.y);
+        max_x = max_x.max(pos.x + size.width  as i32);
+        max_y = max_y.max(pos.y + size.height as i32);
+    }
+
+    win.set_position(tauri::Position::Physical(PhysicalPosition::new(min_x, min_y)))
         .map_err(|e| e.to_string())?;
-    win.set_size(tauri::Size::Physical(*size))
-        .map_err(|e| e.to_string())?;
+    win.set_size(tauri::Size::Physical(PhysicalSize::new(
+        (max_x - min_x) as u32,
+        (max_y - min_y) as u32,
+    )))
+    .map_err(|e| e.to_string())?;
 
     Ok(())
+}
+
+#[tauri::command]
+fn refresh_window_bounds(app: tauri::AppHandle) {
+    if let Err(e) = fit_main_window_to_all_monitors(&app) {
+        eprintln!("[frieren] refresh_window_bounds failed: {e}");
+    }
 }
 
 #[tauri::command]
@@ -130,13 +152,14 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             open_ui_window,
             get_cursor_position,
+            refresh_window_bounds,
         ])
         .setup(|app| {
             build_tray(app)?;
 
             let handle = app.handle().clone();
-            if let Err(e) = fit_main_window_to_monitor(&handle) {
-                eprintln!("[frieren] Failed to fit main window to monitor: {e}");
+            if let Err(e) = fit_main_window_to_all_monitors(&handle) {
+                eprintln!("[frieren] Failed to fit main window to monitors: {e}");
             }
 
             #[cfg(windows)]
@@ -157,13 +180,14 @@ pub fn run() {
 // ─────────────────────────────────────────────────────────────
 
 fn build_tray(app: &tauri::App) -> tauri::Result<()> {
-    let show_item    = MenuItemBuilder::with_id("show",    "Show Avatar").build(app)?;
-    let settings_item = MenuItemBuilder::with_id("settings", "Settings…").build(app)?;
-    let passive_item = MenuItemBuilder::with_id("toggle_passive", "Toggle Passive Mode").build(app)?;
-    let quit_item    = MenuItemBuilder::with_id("quit",    "Quit").build(app)?;
+    let show_item     = MenuItemBuilder::with_id("show",    "Show Avatar").build(app)?;
+    let settings_item  = MenuItemBuilder::with_id("settings", "Settings…").build(app)?;
+    let passive_item   = MenuItemBuilder::with_id("toggle_passive", "Toggle Passive Mode").build(app)?;
+    let refresh_item   = MenuItemBuilder::with_id("refresh_bounds", "Refresh Layout").build(app)?;
+    let quit_item      = MenuItemBuilder::with_id("quit",    "Quit").build(app)?;
 
     let menu = MenuBuilder::new(app)
-        .items(&[&show_item, &settings_item, &passive_item, &quit_item])
+        .items(&[&show_item, &settings_item, &passive_item, &refresh_item, &quit_item])
         .build()?;
 
     TrayIconBuilder::new()
@@ -183,6 +207,12 @@ fn build_tray(app: &tauri::App) -> tauri::Result<()> {
             "toggle_passive" => {
                 if let Some(win) = app.get_webview_window("main") {
                     win.emit("frieren:toggle-passive", ()).ok();
+                }
+            }
+            "refresh_bounds" => {
+                refresh_window_bounds(app.clone());
+                if let Some(win) = app.get_webview_window("main") {
+                    win.emit("frieren:bounds-refreshed", ()).ok();
                 }
             }
             "quit" => {
