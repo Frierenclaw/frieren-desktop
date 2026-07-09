@@ -1,31 +1,22 @@
 /**
- * auth.js — JWT authentication + auto-refresh for Fern
+ * auth.js, JWT authentication with auto-refresh for Fern
  *
- * Endpoints (from neadond):
+ * Endpoints (from Heiter):
  *   POST /api/v1/auth/login   { username, password }
- *     → { access_token, refresh_token }
+ *     -> { access_token, refresh_token }
  *
  *   POST /api/v1/auth/refresh { refresh_token }
- *     → { access_token, refresh_token }
+ *     -> { access_token, refresh_token }
  *
- * Tokens are stored securely in tauri-plugin-store.
+ * Tokens are stored via the Electron store bridge (electron-store in
+ * the main process).
  */
 
-import { load } from '@tauri-apps/plugin-store';
+import { storeGet, storeSet, storeDelete } from './electron-ipc.js';
 
-/** @type {import('@tauri-apps/plugin-store').Store | null} */
-let _store = null;
+const AUTH_FILE = 'frieren-auth.json';
 
-async function getStore() {
-  if (!_store) {
-    _store = await load('frieren-auth.json', { autoSave: true });
-  }
-  return _store;
-}
-
-// ─────────────────────────────────────────────────────────────
 // Public API
-// ─────────────────────────────────────────────────────────────
 
 /**
  * Log in with username/password.
@@ -34,6 +25,8 @@ async function getStore() {
  * @param {string} password
  */
 export async function login(baseUrl, username, password) {
+  // Heiter uses OAuth2PasswordRequestForm, it rejects a JSON body with 422,
+  // so this stays form-urlencoded. Do not change this to JSON.
   const res = await fetch(`${baseUrl}/api/v1/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -46,10 +39,9 @@ export async function login(baseUrl, username, password) {
   }
 
   const data = await res.json();
-  const s = await getStore();
-  await s.set('access_token',  data.access_token);
-  await s.set('refresh_token', data.refresh_token);
-  await s.set('base_url',      baseUrl);
+  await storeSet(AUTH_FILE, 'access_token', data.access_token);
+  await storeSet(AUTH_FILE, 'refresh_token', data.refresh_token);
+  await storeSet(AUTH_FILE, 'base_url', baseUrl);
   return data;
 }
 
@@ -58,14 +50,14 @@ export async function login(baseUrl, username, password) {
  * Called automatically by authedFetch on 401.
  */
 export async function refreshTokens() {
-  const s = await getStore();
-  const refreshToken = await s.get('refresh_token');
-  const baseUrl      = await s.get('base_url');
+  const refreshToken = await storeGet(AUTH_FILE, 'refresh_token');
+  const baseUrl = await storeGet(AUTH_FILE, 'base_url');
 
   if (!refreshToken || !baseUrl) {
-    throw new Error('No refresh token stored — please log in.');
+    throw new Error('No refresh token stored, please log in.');
   }
 
+  // Different endpoint from login, this one takes a JSON body.
   const res = await fetch(`${baseUrl}/api/v1/auth/refresh`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -73,27 +65,25 @@ export async function refreshTokens() {
   });
 
   if (!res.ok) {
-    // Refresh token is invalid/expired — user must re-login
+    // Refresh token is invalid/expired, the user must re-login
     await logout();
     throw new Error(`Session expired (${res.status}). Please log in again.`);
   }
 
   const data = await res.json();
-  await s.set('access_token',  data.access_token);
-  await s.set('refresh_token', data.refresh_token);
+  await storeSet(AUTH_FILE, 'access_token', data.access_token);
+  await storeSet(AUTH_FILE, 'refresh_token', data.refresh_token);
   return data;
 }
 
 /** Read the stored access token (may be null). */
 export async function getAccessToken() {
-  const s = await getStore();
-  return /** @type {string|null} */ (await s.get('access_token'));
+  return storeGet(AUTH_FILE, 'access_token');
 }
 
 /** Read the stored base URL (may be null). */
 export async function getBaseUrl() {
-  const s = await getStore();
-  return /** @type {string|null} */ (await s.get('base_url'));
+  return storeGet(AUTH_FILE, 'base_url');
 }
 
 /** True if an access token is saved. */
@@ -104,13 +94,12 @@ export async function isLoggedIn() {
 
 /** Clear all stored tokens. */
 export async function logout() {
-  const s = await getStore();
-  await s.delete('access_token');
-  await s.delete('refresh_token');
+  await storeDelete(AUTH_FILE, 'access_token');
+  await storeDelete(AUTH_FILE, 'refresh_token');
 }
 
 /**
- * Authenticated fetch — adds Bearer header.
+ * Authenticated fetch, adds a Bearer header.
  * On 401, attempts one token refresh and retries.
  * Throws if refresh fails too.
  *
@@ -133,7 +122,7 @@ export async function authedFetch(url, options = {}) {
   let res = await doRequest(token);
 
   if (res.status === 401) {
-    const { access_token: newToken } = await refreshTokens(); // throws if can't refresh
+    const { access_token: newToken } = await refreshTokens(); // throws if it can't refresh
     res = await doRequest(newToken);
   }
 

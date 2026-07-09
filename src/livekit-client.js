@@ -44,7 +44,7 @@ function _dispatchViseme(data) {
     if (_onVisemeCb) {
       _onVisemeCb(data);
     } else {
-      console.warn('[viseme] No viseme callback registered — message dropped');
+      console.warn('[viseme] No viseme callback registered; message dropped');
     }
   } else if (data.type === 'viseme') {
     console.warn('[viseme] Received legacy type "viseme" (expected "vrm_viseme"):', data);
@@ -118,9 +118,9 @@ export async function connect() {
 
   // ── v2.x DataReceived: (payload, participant, kind, topic) ────
   // Fires only for messages published WITHOUT a topic (or with topic=undefined).
-  // If Fern sends with a topic, this won't fire — see stream handlers below.
+  // If Fern sends with a topic, this won't fire, see stream handlers below.
   _room.on(RoomEvent.DataReceived, (payload, participant, kind, topic) => {
-    console.debug('[livekit] DataReceived fired — topic:', topic ?? '(none)', 'kind:', kind, 'from:', participant?.identity ?? 'unknown');
+    console.debug('[livekit] DataReceived fired; topic:', topic ?? '(none)', 'kind:', kind, 'from:', participant?.identity ?? 'unknown');
 
     const text = new TextDecoder().decode(payload);
     let data;
@@ -153,7 +153,7 @@ export async function connect() {
       }
     });
   } else {
-    console.warn('[viseme] registerTextStreamHandler not available — LiveKit client may be too old');
+    console.warn('[viseme] registerTextStreamHandler not available; LiveKit client may be too old');
   }
 
   // Binary/data stream (publishData with topic, Uint8Array payload)
@@ -173,7 +173,7 @@ export async function connect() {
       }
     });
   } else {
-    console.warn('[viseme] registerDataStreamHandler not available — LiveKit client may be too old');
+    console.warn('[viseme] registerDataStreamHandler not available; LiveKit client may be too old');
   }
 
   _room.on(RoomEvent.TrackSubscribed, (track, publication, participant) => {

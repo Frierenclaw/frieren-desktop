@@ -1,6 +1,8 @@
-import { listen, emit }      from '@tauri-apps/api/event';
-import { WebviewWindow }     from '@tauri-apps/api/webviewWindow';
-import { convertFileSrc, invoke } from '@tauri-apps/api/core';
+import {
+  onFrierenEvent, emitFrierenEvent,
+  getCursorPosition, setIgnoreCursorEvents, getWindowPosition,
+  openOrFocusSettingsWindow, localPathToFileUrl, quitApp,
+} from './electron-ipc.js';
 
 import {
   initAvatar, loadVRM, applyViseme, initDragControls, resetAvatarTransform,
@@ -8,11 +10,7 @@ import {
 } from './avatar.js';
 import { connect, disconnect, onViseme, onStateChange, isConnected, tryUnblockAudio, onAudioReady } from './livekit-client.js';
 import { getConfig } from './config.js';
-import { getCurrentWindow } from '@tauri-apps/api/window';
 
-import { exit } from '@tauri-apps/plugin-process';
-
-// ── Context menu ──
 const contextMenu   = document.getElementById('context-menu');
 const controlsPanel = document.getElementById('controls-panel');
 const passiveBtn    = document.getElementById('passive-btn');
@@ -26,9 +24,11 @@ const statusDot       = document.getElementById('status-dot');
 initAvatar(canvas);
 initDragControls(canvas);
 
+console.log('[frieren] window.innerWidth', window.innerWidth, 'window.innerHeight', window.innerHeight, 'devicePixelRatio', window.devicePixelRatio);
+
 const MIN_CONTAINER_W = 120;
 const MAX_CONTAINER_W = 800;
-const CONTAINER_ASPECT = 480 / 280; // height/width, locked to the original art's proportions
+const CONTAINER_ASPECT = 480 / 280;
 
 let containerW = avatarContainer.offsetWidth;
 let containerH = avatarContainer.offsetHeight;
@@ -44,7 +44,7 @@ function applyContainerRect() {
   handleResize();
 }
 
-let pendingResize = null; // {x, y, w, h} while a resize gesture is live
+let pendingResize = null;
 
 onAvatarResizeWheel(
   (deltaY) => {
@@ -77,22 +77,18 @@ onAvatarResizeWheel(
   },
 );
 
-const appWindow = getCurrentWindow();
-
-// ─────────────────────────────────────────────────────────────
-// Walk-around click-through
-// ─────────────────────────────────────────────────────────────
 const HIT_TEST_INTERVAL_MS = 80;
 
 let windowIsInteractive = true;
-let gestureInProgress   = false; // Ctrl-drag or Ctrl-scroll resize in progress
+let gestureInProgress   = false;
 let cachedWindowOrigin  = null;
+let lastHitTestLog = 0;
 
 async function setInteractive(shouldBeInteractive) {
   if (shouldBeInteractive === windowIsInteractive) return;
   windowIsInteractive = shouldBeInteractive;
   try {
-    await appWindow.setIgnoreCursorEvents(!shouldBeInteractive);
+    await setIgnoreCursorEvents(!shouldBeInteractive);
   } catch (err) {
     console.warn('[frieren] setIgnoreCursorEvents failed:', err);
   }
@@ -137,14 +133,21 @@ async function hitTestTick() {
 
   try {
     if (!cachedWindowOrigin) {
-      cachedWindowOrigin = await appWindow.outerPosition();
+      cachedWindowOrigin = await getWindowPosition();
+      console.log('[frieren] cachedWindowOrigin', cachedWindowOrigin);
     }
-    const [x, y] = await invoke('get_cursor_position');
-    const dpr = window.devicePixelRatio || 1;
-    const cssX = (x - cachedWindowOrigin.x) / dpr;
-    const cssY = (y - cachedWindowOrigin.y) / dpr;
+    const { x, y } = await getCursorPosition();
+    const cssX = x - cachedWindowOrigin.x;
+    const cssY = y - cachedWindowOrigin.y;
 
     const inside = pointInAnyInteractiveZone(cssX, cssY);
+
+    const now = performance.now();
+    if (now - lastHitTestLog > 1000) {
+      lastHitTestLog = now;
+      console.log('[frieren] cursor', x, y, 'css', cssX, cssY, 'avatarBounds', avatarBounds(), 'inside', inside);
+    }
+
     await setInteractive(inside);
   } catch (err) {
     console.warn('[frieren] cursor hit-test failed:', err);
@@ -167,20 +170,15 @@ onAvatarDragMove((dx, dy) => {
 });
 
 canvas.addEventListener('mousedown', (e) => {
-  // Any click on the canvas serves as a user gesture for Chromium's
-  // autoplay policy, unblocking TTS audio playback.
   tryUnblockAudio();
 
   if (e.ctrlKey) {
     beginAvatarDrag(e.clientX, e.clientY, e.button, e.shiftKey);
     e.preventDefault();
   } else if (e.button === 0) {
-    // Reserved for a future avatar interaction
   }
 });
 
-// Middle-click normally triggers Chromium's auto-scroll cursor; block it
-// whenever Ctrl is held so the rotate gesture doesn't fight the browser.
 canvas.addEventListener('auxclick', (e) => {
   if (e.button === 1 && e.ctrlKey) e.preventDefault();
 });
@@ -191,7 +189,7 @@ canvas.addEventListener('auxclick', (e) => {
     try {
       const path = config.avatarPath;
       const isRemote = path.startsWith('http://') || path.startsWith('https://');
-      await loadVRM(isRemote ? path : convertFileSrc(path));
+      await loadVRM(isRemote ? path : localPathToFileUrl(path));
     } catch (err) {
       console.warn('Failed to restore avatar:', err);
     }
@@ -204,49 +202,49 @@ onViseme((visemeData) => {
 
 onStateChange((state) => {
   updateStatusDot(state);
-  emit('frieren:state-update', { state }).catch(() => {});
+  emitFrierenEvent('frieren:state-update', { state });
 });
 
-listen('frieren:bounds-refreshed', () => {
+onFrierenEvent('frieren:bounds-refreshed', () => {
   cachedWindowOrigin = null;
 });
 
-listen('frieren:connect', async () => {
+onFrierenEvent('frieren:connect', async () => {
   try {
     await connect();
   } catch (err) {
     updateStatusDot('error');
-    emit('frieren:state-update', { state: 'error', error: err.message }).catch(() => {});
+    emitFrierenEvent('frieren:state-update', { state: 'error', error: err.message });
   }
 });
 
-listen('frieren:disconnect', async () => {
+onFrierenEvent('frieren:disconnect', async () => {
   await disconnect();
 });
 
-listen('frieren:toggle-passive', async () => {
+onFrierenEvent('frieren:toggle-passive', async () => {
   await togglePassive(!isPassive);
 });
 
-listen('frieren:load-vrm', async (event) => {
-  const { path } = event.payload;
+onFrierenEvent('frieren:load-vrm', async (payload) => {
+  const { path } = payload;
   try {
     const isRemote = path.startsWith('http://') || path.startsWith('https://');
-    await loadVRM(isRemote ? path : convertFileSrc(path));
+    await loadVRM(isRemote ? path : localPathToFileUrl(path));
   } catch (err) {
     console.error('Failed to load VRM:', err);
   }
 });
 
-listen('frieren:state-query', () => {
-  emit('frieren:state-update', { state: isConnected() ? 'connected' : 'disconnected' }).catch(() => {});
+onFrierenEvent('frieren:state-query', () => {
+  emitFrierenEvent('frieren:state-update', { state: isConnected() ? 'connected' : 'disconnected' });
 });
 
 function updateStatusDot(state) {
   statusDot.className = `status ${state}`;
   const labels = {
     connected:    'Connected',
-    connecting:   'Connecting…',
+    connecting:   'Connecting...',
     disconnected: 'Disconnected',
     error:        'Error',
   };
@@ -281,24 +279,7 @@ window.addEventListener('mousedown', (e) => {
 
 document.getElementById('ctx-settings').addEventListener('click', async () => {
   hideAll();
-  const existing = await WebviewWindow.getByLabel('ui');
-  if (existing) {
-    await existing.show();
-    await existing.setFocus();
-    return;
-  }
-  new WebviewWindow('ui', {
-    url:         'ui.html',
-    title:       'Frieren Desktop — Settings',
-    width:       460,
-    height:      580,
-    minWidth:    360,
-    minHeight:   480,
-    resizable:   true,
-    decorations: true,
-    alwaysOnTop: false,
-    center:      true,
-  });
+  await openOrFocusSettingsWindow();
 });
 
 document.getElementById('ctx-controls').addEventListener('click', (e) => {
@@ -312,7 +293,7 @@ document.getElementById('ctx-passive').addEventListener('click', async () => {
 });
 
 document.getElementById('ctx-quit').addEventListener('click', async () => {
-  await exit(0);
+  await quitApp(0);
 });
 
 async function togglePassive(enable) {
@@ -329,14 +310,12 @@ async function togglePassive(enable) {
   canvas.style.opacity = opacity;
 }
 
-// ── Opacity slider ──
 document.getElementById('opacity-slider').addEventListener('input', (e) => {
   const val = e.target.value;
   document.getElementById('opacity-value').textContent = `${val}%`;
   if (isPassive) canvas.style.opacity = val / 100;
 });
 
-// ── Reset position ──
 document.getElementById('reset-btn').addEventListener('click', () => {
   hideAll();
   resetAvatarTransform();

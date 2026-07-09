@@ -19,30 +19,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - platform: ubuntu-22.04
-            target: x86_64-unknown-linux-gnu
-          - platform: macos-latest
-            target: aarch64-apple-darwin
-          - platform: windows-latest
-            target: x86_64-pc-windows-msvc
+        platform: [ubuntu-22.04, macos-latest, windows-latest]
 
     runs-on: ${{ matrix.platform }}
 
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install system dependencies (Linux)
-        if: matrix.platform == 'ubuntu-22.04'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev \
-            patchelf \
-            libssl-dev \
-            libgtk-3-dev
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -50,29 +32,17 @@ jobs:
           node-version: 20
           cache: npm
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
-
-      - name: Rust cache
-        uses: swatinem/rust-cache@v2
-        with:
-          workspaces: src-tauri
-
-      - name: Install frontend dependencies
+      - name: Install dependencies
         run: npm install
 
-      - name: Build with Tauri
-        uses: tauri-apps/tauri-action@v0
+      # No Rust toolchain, no apt system deps for webkit/gtk needed here.
+      # electron-builder bundles Chromium, there is no native compile step.
+
+      - name: Build (and publish on tag pushes)
+        run: npm run dist -- --publish ${{ startsWith(github.ref, 'refs/tags/v') && 'always' || 'never' }}
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tagName: v__VERSION__
-          releaseName: Frieren Desktop v__VERSION__
-          releaseBody: |
-            ## Frieren Desktop
-            Download the binary for your platform below.
-          releaseDraft: true
-          prerelease: false
-          args: --target ${{ matrix.target }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Version comes straight from package.json now, electron-builder
+      # reads it automatically. Bump package.json's "version" field
+      # before tagging a release, tauri.conf.json no longer exists.

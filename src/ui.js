@@ -1,5 +1,5 @@
 /**
- * ui.js — Settings / control window entry point
+ * ui.js, Settings / control window entry point
  *
  * Handles:
  *   - Instance management (add / select Heiter endpoints)
@@ -7,11 +7,10 @@
  *   - Connect / disconnect controls
  *   - VRM model file selection
  *
- * Sends commands to the avatar window via Tauri event bus.
+ * Sends commands to the avatar window via the Electron IPC event relay.
  */
 
-import { listen, emit, emitTo } from '@tauri-apps/api/event';
-import { open as openDialog }   from '@tauri-apps/plugin-dialog';
+import { onFrierenEvent, emitFrierenEvent, emitFrierenEventTo, openFileDialog } from './electron-ipc.js';
 
 import { login, logout, isLoggedIn, getBaseUrl, authedFetch } from './auth.js';
 import {
@@ -27,9 +26,7 @@ import {
   removeWakeWord,
 } from './config.js';
 
-// ─────────────────────────────────────────────────────────────
 // DOM refs
-// ─────────────────────────────────────────────────────────────
 const $ = (id) => document.getElementById(id);
 
 const instanceSelect       = $('instance-select');
@@ -64,9 +61,7 @@ const newWakeWordInput     = $('new-wake-word');
 const addWakeWordBtn       = $('add-wake-word-btn');
 const wakeWordsError       = $('wake-words-error');
 
-// ─────────────────────────────────────────────────────────────
 // Bootstrap
-// ─────────────────────────────────────────────────────────────
 
 async function init() {
   await renderInstances();
@@ -74,13 +69,11 @@ async function init() {
   await loadCharacters();
   await renderWakeWords();
 
-  // Ask the main window for current connection state
-  await emit('frieren:state-query');
+  // Ask the avatar window for its current connection state
+  emitFrierenEvent('frieren:state-query');
 }
 
-// ─────────────────────────────────────────────────────────────
 // Instance section
-// ─────────────────────────────────────────────────────────────
 
 async function renderInstances() {
   const config = await getConfig();
@@ -118,7 +111,7 @@ saveInstanceBtn.addEventListener('click', async () => {
     return;
   }
   try { new URL(url); } catch {
-    alert('Invalid URL — please include https://');
+    alert('Invalid URL, please include https://');
     return;
   }
 
@@ -130,9 +123,7 @@ saveInstanceBtn.addEventListener('click', async () => {
   newInstanceUrl.value  = '';
 });
 
-// ─────────────────────────────────────────────────────────────
 // Auth section
-// ─────────────────────────────────────────────────────────────
 
 async function renderAuthState() {
   const loggedIn = await isLoggedIn();
@@ -161,14 +152,14 @@ loginBtn.addEventListener('click', async () => {
   }
 
   loginBtn.disabled     = true;
-  loginBtn.textContent  = 'Logging in…';
+  loginBtn.textContent  = 'Logging in...';
   authError.classList.add('hidden');
 
   try {
     await login(baseUrl, username, password);
     passwordInput.value = '';
     await renderAuthState();
-    await loadCharacters();   
+    await loadCharacters();
   } catch (err) {
     showAuthError(err.message);
   } finally {
@@ -180,10 +171,10 @@ loginBtn.addEventListener('click', async () => {
 logoutBtn.addEventListener('click', async () => {
   await logout();
   await renderAuthState();
-  await loadCharacters(); 
+  await loadCharacters();
   // If we were connected, the session is now invalid
   if (!disconnectBtn.classList.contains('hidden')) {
-    await sendCommand('frieren:disconnect');
+    sendCommand('frieren:disconnect');
     setConnected(false);
   }
 });
@@ -193,33 +184,31 @@ function showAuthError(msg) {
   authError.classList.remove('hidden');
 }
 
-// ─────────────────────────────────────────────────────────────
 // Connection section
-// ─────────────────────────────────────────────────────────────
 
 connectBtn.addEventListener('click', async () => {
   setConnecting();
   try {
-    await sendCommand('frieren:connect');
-    // State will update via the 'frieren:state-update' event listener below
+    sendCommand('frieren:connect');
+    // State will update via the frieren:state-update relay below
   } catch (err) {
     connectionStatusText.textContent = `Error: ${err.message}`;
     setConnected(false);
   }
 });
 
-disconnectBtn.addEventListener('click', async () => {
-  await sendCommand('frieren:disconnect');
+disconnectBtn.addEventListener('click', () => {
+  sendCommand('frieren:disconnect');
   setConnected(false);
 });
 
 // Listen for state updates from the avatar window
-listen('frieren:state-update', (event) => {
-  const { state, error } = /** @type {{ state: string, error?: string }} */ (event.payload);
+onFrierenEvent('frieren:state-update', (payload) => {
+  const { state, error } = /** @type {{ state: string, error?: string }} */ (payload);
 
   const labels = {
     connected:    'Connected to Fern',
-    connecting:   'Connecting…',
+    connecting:   'Connecting...',
     disconnected: 'Disconnected',
     error:        `Error: ${error ?? 'unknown'}`,
   };
@@ -238,8 +227,8 @@ listen('frieren:state-update', (event) => {
 
 function setConnecting() {
   connectBtn.disabled = true;
-  connectBtn.textContent = 'Connecting…';
-  connectionStatusText.textContent = 'Connecting to Fern…';
+  connectBtn.textContent = 'Connecting...';
+  connectionStatusText.textContent = 'Connecting to Fern...';
   connectionBadge.className = 'badge connecting';
   connectionBadge.textContent = 'Connecting';
 }
@@ -256,25 +245,22 @@ function setConnected(yes) {
   }
 }
 
-// ─────────────────────────────────────────────────────────────
 // Avatar / VRM section
-// ─────────────────────────────────────────────────────────────
 
 loadVrmBtn.addEventListener('click', async () => {
   try {
-    // Open native file picker via Tauri dialog plugin
-    const selected = await openDialog({
+    const selected = await openFileDialog({
       title:    'Select VRM Avatar Model',
       filters:  [{ name: 'VRM Model', extensions: ['vrm'] }],
       multiple: false,
     });
 
-    if (!selected) return;   // user cancelled
+    if (!selected) return; // user cancelled
 
     const filePath = typeof selected === 'string' ? selected : selected[0];
 
     // Tell the avatar window to load this model
-    await sendCommand('frieren:load-vrm', { path: filePath });
+    sendCommand('frieren:load-vrm', { path: filePath });
 
     // Save path so it auto-loads next time
     await setAvatarPath(filePath);
@@ -286,19 +272,14 @@ loadVrmBtn.addEventListener('click', async () => {
   }
 });
 
-// ─────────────────────────────────────────────────────────────
 // Helpers
-// ─────────────────────────────────────────────────────────────
 
 /** Send an event to the avatar (main) window. */
-async function sendCommand(eventName, payload = {}) {
-  // emitTo sends only to the 'main' label window
-  await emitTo('main', eventName, payload);
+function sendCommand(eventName, payload = {}) {
+  emitFrierenEventTo('main', eventName, payload);
 }
 
-// ─────────────────────────────────────────────────────────────
 // Wake words section
-// ─────────────────────────────────────────────────────────────
 
 async function renderWakeWords() {
   const words = await getWakeWords();
@@ -307,7 +288,7 @@ async function renderWakeWords() {
   if (words.length === 0) {
     const empty = document.createElement('span');
     empty.className = 'info-text';
-    empty.textContent = 'No wake words set — the assistant will not start listening.';
+    empty.textContent = 'No wake words set, the assistant will not start listening.';
     wakeWordsList.appendChild(empty);
     return;
   }
@@ -365,9 +346,7 @@ newWakeWordInput.addEventListener('keydown', (e) => {
   }
 });
 
-// ─────────────────────────────────────────────────────────────
-// Load Characters
-// ─────────────────────────────────────────────────────────────
+// Load characters
 
 async function loadCharacters() {
   const loggedIn = await isLoggedIn();
@@ -377,7 +356,7 @@ async function loadCharacters() {
     return;
   }
 
-  characterStatus.textContent = 'Loading characters…';
+  characterStatus.textContent = 'Loading characters...';
   characterList.innerHTML = '';
 
   try {
@@ -423,7 +402,7 @@ async function loadCharacters() {
 
         // If the character has a model_url, auto-load it
         if (char.model_url) {
-          await sendCommand('frieren:load-vrm', { path: char.model_url });
+          sendCommand('frieren:load-vrm', { path: char.model_url });
           await setAvatarPath(char.model_url);
           avatarInfo.textContent = `Loaded: ${char.name}`;
         }
@@ -436,7 +415,5 @@ async function loadCharacters() {
   }
 }
 
-// ─────────────────────────────────────────────────────────────
 // Init
-// ─────────────────────────────────────────────────────────────
 init();

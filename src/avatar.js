@@ -202,7 +202,7 @@ export function applyViseme(data) {
   const name = data?.viseme;
 
   if (!isValidViseme(name)) {
-    console.debug('[viseme] ignored — not a valid viseme name:', name, 'data:', data);
+    console.debug('[viseme] ignored, not a valid viseme name:', name, 'data:', data);
     return;
   }
 
@@ -311,7 +311,7 @@ function startRenderLoop() {
 function applyIdleBreathing(delta) {
   if (gesturePlaying) return;
   breathTime += delta;
-  const v = Math.sin(breathTime * 0.8) * 0.04; // 0.04 rad ≈ 2.3° — visible
+  const v = Math.sin(breathTime * 0.8) * 0.04; // 0.04 rad ≈ 2.3°; visible
 
   const h = currentVRM?.humanoid;
   if (!h) return;
@@ -575,7 +575,7 @@ export function initDragControls(canvas) {
   }, { passive: false });
 
   // Once a resize gesture starts on the canvas, keep tracking it on
-  // window too — the canvas itself may shrink out from under the
+  // window too the canvas itself may shrink out from under the
   // cursor mid-gesture, which would otherwise stall the resize.
   window.addEventListener('wheel', (e) => {
     if (!resizeInProgress || !e.ctrlKey || e.shiftKey) return;

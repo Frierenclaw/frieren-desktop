@@ -1,27 +1,53 @@
 {
   "name": "frieren-desktop",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
+  "main": "electron/main.js",
   "scripts": {
-    "dev": "vite",
+    "dev": "concurrently -k \"vite\" \"wait-on tcp:1420 && electron .\"",
     "build": "vite build",
-    "tauri": "tauri"
+    "dist": "npm run build && electron-builder"
   },
   "dependencies": {
     "@pixiv/three-vrm": "^3.1.0",
-    "@pixiv/three-vrm-animation": "^3.5.4",
-    "@tauri-apps/api": "^2.0.0",
-    "@tauri-apps/plugin-dialog": "^2.7.1",
-    "@tauri-apps/plugin-fs": "^2.5.1",
-    "@tauri-apps/plugin-process": "^2.3.1",
-    "@tauri-apps/plugin-store": "^2.2.0",
-    "esbuild": "^0.28.1",
+    "@pixiv/three-vrm-animation": "^3.5.3",
+    "electron-store": "^10.0.0",
     "livekit-client": "^2.5.0",
     "three": "^0.170.0"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^2.0.0",
-    "vite": "^8.0.16"
+    "concurrently": "^9.0.0",
+    "electron": "^33.4.11",
+    "electron-builder": "^25.0.0",
+    "vite": "^8.0.16",
+    "wait-on": "^8.0.0"
+  },
+  "build": {
+    "appId": "ai.frieren.desktop",
+    "productName": "frieren-desktop",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*"
+    ],
+    "publish": {
+      "provider": "github"
+    },
+    "mac": {
+      "icon": "icons/icon.icns",
+      "category": "public.app-category.utilities"
+    },
+    "win": {
+      "icon": "icons/icon.ico"
+    },
+    "linux": {
+      "icon": "icons/128x128.png",
+      "target": [
+        "AppImage"
+      ]
+    }
   }
 }
