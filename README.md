@@ -7,11 +7,11 @@ No coding, no setup beyond installing it. Download, run, connect, talk.
 
 <p align="center">
   <img src="media/demo.gif" alt="Frieren Desktop demo" width="480" />
-</p>
+</p><br>
 
 <p align="center">
   <img src="media/screenshot-avatar.png" alt="Avatar window" width="260" />
-  <img src="media/screenshot-settings.png" alt="Settings window" width="380" />
+  <br><img src="media/screenshot-settings.png" alt="Settings window" width="380" />
 </p>
 
 ## What it does
