@@ -1,34 +1,149 @@
-name: Build
+name: Build and Release
+
 on:
   push:
     branches: [main]
     tags: ['v*']
   pull_request:
     branches: [main]
+  workflow_dispatch:
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
+
 permissions:
   contents: write
+
 jobs:
-  tag:
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+  prepare:
     runs-on: ubuntu-22.04
+    outputs:
+      publish: ${{ steps.publish.outputs.publish }}
+      tag: ${{ steps.version.outputs.tag }}
+      version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0   
-      - name: Create tag from package.json version
+          fetch-depth: 0
+
+      - name: Resolve release version
+        id: version
+        shell: bash
         run: |
-          VERSION=$(node -p "require('./package.json').version")
-          if git rev-parse "v$VERSION" >/dev/null 2>&1; then
-            echo "Tag v$VERSION already exists, skipping"
-          else
-            git tag "v$VERSION"
-            git push origin "v$VERSION"
+          set -euo pipefail
+
+          VERSION="$(node -p "require('./package.json').version")"
+          TAG="v${VERSION}"
+
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Check existing GitHub release
+        id: release
+        if: github.event_name != 'pull_request'
+        uses: actions/github-script@v7
+        env:
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+        with:
+          script: |
+            const releases = await github.paginate(github.rest.repos.listReleases, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              per_page: 100,
+            });
+            const release = releases.find((item) => item.tag_name === process.env.RELEASE_TAG);
+
+            core.setOutput('exists', release ? 'true' : 'false');
+            core.setOutput('draft', release?.draft ? 'true' : 'false');
+
+      - name: Decide release publishing
+        id: publish
+        shell: bash
+        env:
+          RELEASE_DRAFT: ${{ steps.release.outputs.draft }}
+          RELEASE_EXISTS: ${{ steps.release.outputs.exists }}
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          PUBLISH="false"
+
+          if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
 
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            if [[ "$GITHUB_REF_NAME" != "$RELEASE_TAG" ]]; then
+              echo "::error::Tag ${GITHUB_REF_NAME} does not match package.json version ${RELEASE_VERSION}"
+              exit 1
+            fi
+            PUBLISH="true"
+          elif [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+            if git rev-parse -q --verify "refs/tags/${RELEASE_TAG}" >/dev/null; then
+              echo "Tag ${RELEASE_TAG} already exists"
+            else
+              git tag "$RELEASE_TAG"
+              git push origin "$RELEASE_TAG"
+            fi
+            PUBLISH="true"
+          elif [[ "$GITHUB_REF" == "refs/heads/main" ]]; then
+            if git rev-parse -q --verify "refs/tags/${RELEASE_TAG}" >/dev/null; then
+              if [[ "$RELEASE_DRAFT" == "true" ]]; then
+                echo "Release ${RELEASE_TAG} is still a draft; publishing will be retried"
+                PUBLISH="true"
+              elif [[ "$RELEASE_EXISTS" == "true" ]]; then
+                echo "Release ${RELEASE_TAG} already exists; skipping release publishing"
+              else
+                echo "Tag ${RELEASE_TAG} exists but release is missing; publishing will be retried"
+                PUBLISH="true"
+              fi
+            else
+              git tag "$RELEASE_TAG"
+              git push origin "$RELEASE_TAG"
+              PUBLISH="true"
+            fi
+          fi
+
+          echo "publish=${PUBLISH}" >> "$GITHUB_OUTPUT"
+
+  create-release:
+    needs: prepare
+    if: needs.prepare.outputs.publish == 'true'
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Create draft GitHub release
+        uses: actions/github-script@v7
+        env:
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+        with:
+          script: |
+            const releases = await github.paginate(github.rest.repos.listReleases, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              per_page: 100,
+            });
+            const release = releases.find((item) => item.tag_name === process.env.RELEASE_TAG);
+
+            if (release) {
+              core.info(`Release ${process.env.RELEASE_TAG} already exists`);
+              return;
+            }
+
+            await github.rest.repos.createRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag_name: process.env.RELEASE_TAG,
+              name: process.env.RELEASE_TAG,
+              draft: true,
+              generate_release_notes: true,
+            });
+
   build:
+    needs: [prepare, create-release]
+    if: always() && needs.prepare.result == 'success' && (needs.prepare.outputs.publish != 'true' || needs.create-release.result == 'success')
     strategy:
       fail-fast: false
       matrix:
@@ -42,8 +157,39 @@ jobs:
           node-version: 20
           cache: npm
       - name: Install dependencies
-        run: npm install
-      - name: Build (and publish on tag pushes)
-        run: npm run dist -- --publish ${{ startsWith(github.ref, 'refs/tags/v') && 'always' || 'never' }}
+        run: npm ci
+      - name: Build app
+        shell: bash
+        run: npm run dist -- --publish "$PUBLISH_POLICY"
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+          PUBLISH_POLICY: ${{ needs.prepare.outputs.publish == 'true' && 'always' || 'never' }}
+
+  publish-release:
+    needs: [prepare, build]
+    if: needs.prepare.outputs.publish == 'true'
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Publish GitHub release
+        uses: actions/github-script@v7
+        env:
+          RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+        with:
+          script: |
+            const releases = await github.paginate(github.rest.repos.listReleases, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              per_page: 100,
+            });
+            const release = releases.find((item) => item.tag_name === process.env.RELEASE_TAG);
+
+            if (!release) {
+              throw new Error(`Release ${process.env.RELEASE_TAG} was not found`);
+            }
+
+            await github.rest.repos.updateRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: release.id,
+              draft: false,
+            });
