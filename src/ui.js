@@ -214,6 +214,7 @@ loginBtn.addEventListener('click', async () => {
 
 logoutBtn.addEventListener('click', async () => {
   await logout();
+  await setCharacterId(null);
   await renderAuthState();
   await loadCharacters();
   // If we were connected, the session is now invalid

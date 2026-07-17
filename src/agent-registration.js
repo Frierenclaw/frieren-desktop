@@ -8,9 +8,16 @@ export async function registerClientFunctions(baseUrl) {
   const app_version = await getAppVersion();
   const functions = buildManifest();
 
-  const res = await authedFetch(`${baseUrl}/api/v1/client`, {
+  const payload = {
+    client: { id: client_id, app_version },
+    functions,
+  };
+
+  console.debug('[agent] registering client', payload);
+
+  const res = await authedFetch(`${baseUrl}/api/v1/client/`, {
     method: 'POST',
-    body: JSON.stringify({ client_id, app_version, functions }),
+    body: JSON.stringify(payload),
   });
 
   if (!res.ok) {

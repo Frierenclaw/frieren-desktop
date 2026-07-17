@@ -118,13 +118,8 @@ onStateChange((state) => {
 onFrierenEvent('frieren:connect', async () => {
   try {
     const baseUrl = await getBaseUrl();
-    if (baseUrl) {
-      try {
-        await registerClientFunctions(baseUrl);
-      } catch (err) {
-        console.warn('[frieren] failed to register agent functions, connecting anyway:', err);
-      }
-    }
+    if (!baseUrl) throw new Error('No server configured. Please set an instance and log in first.');
+    await registerClientFunctions(baseUrl);
     await connect();
   } catch (err) {
     updateStatusDot('error');
