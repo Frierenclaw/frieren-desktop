@@ -1,6 +1,6 @@
 {
   "name": "frieren-desktop",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Real-time Electron desktop client for the Frieren AI ecosystem.",
   "private": true,
   "type": "module",
@@ -22,8 +22,10 @@
   "dependencies": {
     "@pixiv/three-vrm": "^3.1.0",
     "@pixiv/three-vrm-animation": "^3.5.3",
+    "adm-zip": "^0.5.16",
     "electron-store": "^10.0.0",
     "livekit-client": "^2.5.0",
+    "tar": "^7.4.3",
     "three": "^0.170.0"
   },
   "devDependencies": {

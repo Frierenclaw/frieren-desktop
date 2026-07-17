@@ -2,9 +2,7 @@ import { app, BrowserWindow, Tray, Menu, screen, dialog, ipcMain, nativeImage, p
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import Store from 'electron-store';
-
-app.commandLine.appendSwitch('force-device-scale-factor', '1');
-app.commandLine.appendSwitch('high-dpi-support', '1');
+import { downloadAndExtractAnimations } from './animation-archive.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const isDev = !app.isPackaged;
@@ -43,18 +41,9 @@ const stores = new Map();
 let tray = null;
 let isPassive = false;
 
-function getAllDisplaysBounds() {
-  const displays = screen.getAllDisplays();
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  for (const d of displays) {
-    const { x, y, width, height } = d.bounds;
-    minX = Math.min(minX, x);
-    minY = Math.min(minY, y);
-    maxX = Math.max(maxX, x + width);
-    maxY = Math.max(maxY, y + height);
-  }
-  return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
-}
+const CONTAINER_MARGIN    = 240;
+const DEFAULT_CONTAINER_W = 280;
+const DEFAULT_CONTAINER_H = 480;
 
 function loadWindowUrlOrFile(win, entry) {
   if (isDev) {
@@ -65,13 +54,14 @@ function loadWindowUrlOrFile(win, entry) {
 }
 
 function createMainWindow() {
-  const bounds = getAllDisplaysBounds();
+  const width  = DEFAULT_CONTAINER_W + CONTAINER_MARGIN * 2;
+  const height = DEFAULT_CONTAINER_H + CONTAINER_MARGIN * 2;
+  const display = screen.getPrimaryDisplay();
+  const x = Math.round(display.workArea.x + (display.workArea.width  - width)  / 2);
+  const y = Math.round(display.workArea.y + (display.workArea.height - height) / 2);
 
   const win = new BrowserWindow({
-    x: bounds.x,
-    y: bounds.y,
-    width: bounds.width,
-    height: bounds.height,
+    x, y, width, height,
     minWidth: 200,
     minHeight: 300,
     resizable: false,
@@ -90,14 +80,8 @@ function createMainWindow() {
     },
   });
 
-  win.setBounds(bounds);
-  win.setIgnoreMouseEvents(true, { forward: true });
   loadWindowUrlOrFile(win, 'index.html');
   windows.set('main', win);
-
-  console.log('displays', screen.getAllDisplays());
-  console.log('unionBounds', bounds);
-  console.log('windowBoundsAfterSetBounds', win.getBounds());
 
   win.on('closed', () => windows.delete('main'));
   return win;
@@ -158,7 +142,7 @@ function buildTray() {
         });
       },
     },
-    { label: 'Refresh Layout', click: () => refreshMainWindowBounds() },
+    { label: 'Recenter Avatar', click: () => recenterMainWindowIfOffscreen() },
     { type: 'separator' },
     { label: 'Quit', click: () => app.quit() },
   ]);
@@ -172,12 +156,22 @@ function buildTray() {
   });
 }
 
-function refreshMainWindowBounds() {
+function recenterMainWindowIfOffscreen() {
   const win = windows.get('main');
   if (!win) return;
-  const bounds = getAllDisplaysBounds();
-  win.setBounds(bounds);
-  win.webContents.send('frieren-event', { event: 'frieren:bounds-refreshed', payload: {} });
+
+  const bounds = win.getBounds();
+  const isOnScreen = screen.getAllDisplays().some((d) => {
+    const r = d.workArea;
+    return bounds.x + bounds.width  > r.x && bounds.x < r.x + r.width
+        && bounds.y + bounds.height > r.y && bounds.y < r.y + r.height;
+  });
+  if (isOnScreen) return;
+
+  const display = screen.getPrimaryDisplay();
+  const x = Math.round(display.workArea.x + (display.workArea.width  - bounds.width)  / 2);
+  const y = Math.round(display.workArea.y + (display.workArea.height - bounds.height) / 2);
+  win.setBounds({ ...bounds, x, y });
 }
 
 ipcMain.handle('get-cursor-position', () => {
@@ -187,13 +181,48 @@ ipcMain.handle('get-cursor-position', () => {
 
 ipcMain.handle('set-ignore-cursor-events', (event, ignore) => {
   const win = BrowserWindow.fromWebContents(event.sender);
-  win?.setIgnoreMouseEvents(!!ignore, { forward: true });
+  const options = process.platform === 'linux' ? undefined : { forward: true };
+  win?.setIgnoreMouseEvents(!!ignore, options);
 });
 
 ipcMain.handle('get-window-position', (event) => {
   const win = BrowserWindow.fromWebContents(event.sender);
   const [x, y] = win?.getPosition() ?? [0, 0];
   return { x, y };
+});
+
+ipcMain.handle('move-window-by', (event, { dx, dy }) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (!win) return;
+  const b = win.getBounds();
+  win.setBounds({ ...b, x: Math.round(b.x + dx), y: Math.round(b.y + dy) });
+});
+
+ipcMain.handle('resize-window-centered', (event, { width, height }) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (!win) return;
+  const b  = win.getBounds();
+  const cx = b.x + b.width  / 2;
+  const cy = b.y + b.height / 2;
+  const nw = Math.round(width);
+  const nh = Math.round(height);
+  win.setBounds({
+    x: Math.round(cx - nw / 2),
+    y: Math.round(cy - nh / 2),
+    width:  nw,
+    height: nh,
+  });
+});
+
+ipcMain.handle('center-window', (event, { width, height }) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (!win) return;
+  const display = screen.getDisplayMatching(win.getBounds());
+  const nw = Math.round(width);
+  const nh = Math.round(height);
+  const x  = Math.round(display.workArea.x + (display.workArea.width  - nw) / 2);
+  const y  = Math.round(display.workArea.y + (display.workArea.height - nh) / 2);
+  win.setBounds({ x, y, width: nw, height: nh });
 });
 
 ipcMain.handle('open-ui-window', () => { createUiWindow(); });
@@ -232,10 +261,17 @@ ipcMain.handle('dialog-open', async (event, { title, filters, multiple }) => {
 
 ipcMain.handle('app-exit', (_event, code) => { app.exit(code ?? 0); });
 
+ipcMain.handle('get-app-version', () => app.getVersion());
+
+ipcMain.handle('download-and-extract-animations', async (_event, { url }) => {
+  const destDir = path.join(app.getPath('userData'), 'animations');
+  return downloadAndExtractAnimations(url, destDir);
+});
+
 function watchDisplayChanges() {
-  screen.on('display-added', refreshMainWindowBounds);
-  screen.on('display-removed', refreshMainWindowBounds);
-  screen.on('display-metrics-changed', refreshMainWindowBounds);
+  screen.on('display-added', recenterMainWindowIfOffscreen);
+  screen.on('display-removed', recenterMainWindowIfOffscreen);
+  screen.on('display-metrics-changed', recenterMainWindowIfOffscreen);
 }
 
 app.whenReady().then(() => {

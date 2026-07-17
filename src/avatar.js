@@ -537,11 +537,11 @@ export function onAvatarResizeWheel(onWheel, onEnd) {
   _onResizeEnd   = onEnd;
 }
 
-export function beginAvatarDrag(clientX, clientY, button = 0, shiftKey = false) {
+export function beginAvatarDrag(screenX, screenY, button = 0, shiftKey = false) {
   if (!currentVRM) return;
   isDragging = true;
-  dragStartX = clientX;
-  dragStartY = clientY;
+  dragStartX = screenX;
+  dragStartY = screenY;
   dragButton = button;
   dragShift  = shiftKey;
   _onDragStart?.();
@@ -592,8 +592,8 @@ export function initDragControls(canvas) {
 
   window.addEventListener('mousemove', (e) => {
     if (!isDragging || !currentVRM) return;
-    const dx = e.clientX - dragStartX;
-    const dy = e.clientY - dragStartY;
+    const dx = e.screenX - dragStartX;
+    const dy = e.screenY - dragStartY;
 
     if (dragButton === 1 && dragShift) {
       currentVRM.scene.rotation.y += dx * 0.005;
@@ -605,7 +605,7 @@ export function initDragControls(canvas) {
       _onDragMove?.(dx, dy);
     }
 
-    dragStartX = e.clientX; dragStartY = e.clientY;
+    dragStartX = e.screenX; dragStartY = e.screenY;
   });
   window.addEventListener('mouseup', () => {
     if (isDragging) { isDragging = false; _onDragEnd?.(); }

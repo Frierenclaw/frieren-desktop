@@ -45,6 +45,18 @@ export async function getWindowPosition() {
   return bridge().invoke('get-window-position');
 }
 
+export async function moveWindowBy(dx, dy) {
+  return bridge().invoke('move-window-by', { dx, dy });
+}
+
+export async function resizeWindowCentered(width, height) {
+  return bridge().invoke('resize-window-centered', { width, height });
+}
+
+export async function centerWindow(width, height) {
+  return bridge().invoke('center-window', { width, height });
+}
+
 export async function openOrFocusSettingsWindow() {
   return bridge().invoke('open-ui-window');
 }
@@ -73,4 +85,12 @@ export function localPathToFileUrl(path) {
 
 export async function quitApp(code = 0) {
   return bridge().invoke('app-exit', code);
+}
+
+export async function getAppVersion() {
+  return bridge().invoke('get-app-version');
+}
+
+export async function downloadAndExtractAnimations(url) {
+  return bridge().invoke('download-and-extract-animations', { url });
 }

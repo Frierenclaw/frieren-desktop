@@ -6,7 +6,9 @@ import {
   Track,
 } from 'livekit-client';
 import { authedFetch, getBaseUrl } from './auth.js';
-import { getConfig, getWakeWords } from './config.js';
+import { getConfig, getWakeWords, getAudioInputDeviceId, setAudioInputDeviceId } from './config.js';
+import { getClientId } from './client-id.js';
+import { dispatchToolCall } from './agent-tools.js';
 
 // ── Module state ──────────────────────────────────────────────
 let _room = null;
@@ -14,11 +16,16 @@ let _onVisemeCb      = null;
 let _onStateChangeCb = null;
 let _onErrorCb       = null;
 let _onAudioReadyCb  = null;
+let _availableAnimations = [];
 
 export function onViseme(cb)      { _onVisemeCb = cb; }
 export function onStateChange(cb) { _onStateChangeCb = cb; }
 export function onError(cb)       { _onErrorCb = cb; }
 export function onAudioReady(cb)  { _onAudioReadyCb = cb; }
+
+export function setAvailableAnimations(names) {
+  _availableAnimations = Array.isArray(names) ? names : [];
+}
 
 // ── Audio unblock ──────────────────────────────────────────────
 export function tryUnblockAudio() {
@@ -37,8 +44,7 @@ function _handleAudioStatusChanged(playable) {
   }
 }
 
-// ── Viseme dispatch ───────────────────────────────────────────
-function _dispatchViseme(data) {
+function _dispatchDataMessage(data) {
   if (data.type === 'vrm_viseme') {
     console.debug('[viseme] ▶ received', data);
     if (_onVisemeCb) {
@@ -46,10 +52,32 @@ function _dispatchViseme(data) {
     } else {
       console.warn('[viseme] No viseme callback registered; message dropped');
     }
-  } else if (data.type === 'viseme') {
+    return;
+  }
+
+  if (data.type === 'tool_call') {
+    console.debug('[agent] ▶ tool_call received', data);
+    dispatchToolCall(data)
+      .then((result) => _sendDataMessage(result))
+      .catch((err) => console.warn('[agent] tool_call dispatch failed:', err));
+    return;
+  }
+
+  if (data.type === 'viseme') {
     console.warn('[viseme] Received legacy type "viseme" (expected "vrm_viseme"):', data);
-  } else {
-    console.debug('[viseme] Non-viseme data message (type=%s):', data.type, data);
+    return;
+  }
+
+  console.debug('[livekit] Unhandled data message (type=%s):', data.type, data);
+}
+
+function _sendDataMessage(payload) {
+  if (!_room) return;
+  try {
+    const bytes = new TextEncoder().encode(JSON.stringify(payload));
+    _room.localParticipant.publishData(bytes);
+  } catch (err) {
+    console.warn('[agent] failed to send data message:', err);
   }
 }
 
@@ -62,11 +90,14 @@ async function getSessionToken() {
   if (!config.characterId) throw new Error('No character selected. Please select a character in settings.');
 
   const wakeWords = await getWakeWords();
+  const clientId  = await getClientId();
   const res = await authedFetch(`${baseUrl}/api/v1/room/`, {
     method: 'POST',
     body: JSON.stringify({
       character_id: config.characterId,
       wake_words:   wakeWords,
+      client_id:    clientId,
+      animations:   _availableAnimations,
     }),
   });
 
@@ -130,7 +161,7 @@ export async function connect() {
       console.warn('[viseme] DataReceived: non-JSON payload:', text.slice(0, 200));
       return;
     }
-    _dispatchViseme(data);
+    _dispatchDataMessage(data);
   });
 
   // ── v2.x topic-based stream handlers ─────────────────────────
@@ -146,7 +177,7 @@ export async function connect() {
           console.debug('[viseme] TextStream chunk:', chunk);
           let data;
           try { data = JSON.parse(chunk); } catch { data = { type: 'vrm_viseme', raw: chunk }; }
-          _dispatchViseme(data);
+          _dispatchDataMessage(data);
         }
       } catch (err) {
         console.warn('[viseme] TextStream error:', err);
@@ -166,7 +197,7 @@ export async function connect() {
           console.debug('[viseme] DataStream chunk:', text);
           let data;
           try { data = JSON.parse(text); } catch { console.warn('[viseme] DataStream: non-JSON chunk:', text); return; }
-          _dispatchViseme(data);
+          _dispatchDataMessage(data);
         }
       } catch (err) {
         console.warn('[viseme] DataStream error:', err);
@@ -190,6 +221,15 @@ export async function connect() {
 
   await _room.connect(livekitUrl, token);
   await _room.localParticipant.setMicrophoneEnabled(true);
+
+  const savedDeviceId = await getAudioInputDeviceId();
+  if (savedDeviceId) {
+    try {
+      await _room.switchActiveDevice('audioinput', savedDeviceId);
+    } catch (err) {
+      console.warn('[audio] failed to apply saved input device, using default:', err);
+    }
+  }
 }
 
 export async function disconnect() {
@@ -198,6 +238,17 @@ export async function disconnect() {
     _room = null;
   }
   _emitState('disconnected');
+}
+
+export async function listAudioInputDevices() {
+  return Room.getLocalDevices('audioinput', true);
+}
+
+export async function setAudioInputDevice(deviceId) {
+  await setAudioInputDeviceId(deviceId);
+  if (_room) {
+    await _room.switchActiveDevice('audioinput', deviceId);
+  }
 }
 
 export function isConnected() {

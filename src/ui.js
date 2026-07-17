@@ -11,6 +11,7 @@
  */
 
 import { onFrierenEvent, emitFrierenEvent, emitFrierenEventTo, openFileDialog } from './electron-ipc.js';
+import { Room } from 'livekit-client';
 
 import { login, logout, isLoggedIn, getBaseUrl, authedFetch } from './auth.js';
 import {
@@ -24,6 +25,8 @@ import {
   getWakeWords,
   addWakeWord,
   removeWakeWord,
+  getAudioInputDeviceId,
+  setAudioInputDeviceId,
 } from './config.js';
 
 // DOM refs
@@ -51,6 +54,9 @@ const connectionStatusText = $('connection-status-text');
 const connectBtn           = $('connect-btn');
 const disconnectBtn        = $('disconnect-btn');
 
+const audioInputSelect     = $('audio-input-select');
+const audioInputStatus     = $('audio-input-status');
+
 const avatarInfo           = $('avatar-info');
 const loadVrmBtn           = $('load-vrm-btn');
 const characterStatus      = $('character-status');
@@ -68,10 +74,48 @@ async function init() {
   await renderAuthState();
   await loadCharacters();
   await renderWakeWords();
+  await renderAudioInputDevices();
 
   // Ask the avatar window for its current connection state
   emitFrierenEvent('frieren:state-query');
 }
+
+// Microphone section
+
+async function renderAudioInputDevices() {
+  try {
+    const devices  = await Room.getLocalDevices('audioinput', true);
+    const savedId  = await getAudioInputDeviceId();
+
+    audioInputSelect.innerHTML = '';
+
+    if (devices.length === 0) {
+      audioInputStatus.textContent = 'No microphones found.';
+      return;
+    }
+
+    devices.forEach((d) => {
+      const opt = document.createElement('option');
+      opt.value = d.deviceId;
+      opt.textContent = d.label || `Microphone (${d.deviceId.slice(0, 6)})`;
+      audioInputSelect.appendChild(opt);
+    });
+
+    const stillPresent = savedId && devices.some((d) => d.deviceId === savedId);
+    audioInputSelect.value = stillPresent ? savedId : devices[0].deviceId;
+    audioInputStatus.textContent = '';
+  } catch (err) {
+    audioInputStatus.textContent = `Couldn't list microphones: ${err.message}`;
+  }
+}
+
+audioInputSelect.addEventListener('change', async () => {
+  const deviceId = audioInputSelect.value;
+  await setAudioInputDeviceId(deviceId);
+  sendCommand('frieren:set-audio-device', { deviceId });
+});
+
+navigator.mediaDevices?.addEventListener?.('devicechange', renderAudioInputDevices);
 
 // Instance section
 
@@ -405,6 +449,10 @@ async function loadCharacters() {
           sendCommand('frieren:load-vrm', { path: char.model_url });
           await setAvatarPath(char.model_url);
           avatarInfo.textContent = `Loaded: ${char.name}`;
+        }
+
+        if (char.animations_url) {
+          sendCommand('frieren:load-animations', { url: char.animations_url });
         }
       });
 

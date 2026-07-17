@@ -22,6 +22,7 @@ const DEFAULT_CONFIG = {
   avatarPath: null,
   characterId: null,
   wakeWords: ['Hey Frieren'],
+  audioInputDeviceId: null,
 };
 
 // Public API
@@ -84,6 +85,17 @@ export async function setCharacterId(id) {
   await saveConfig(config);
 }
 
+export async function getAudioInputDeviceId() {
+  const config = await getConfig();
+  return config.audioInputDeviceId ?? null;
+}
+
+export async function setAudioInputDeviceId(deviceId) {
+  const config = await getConfig();
+  config.audioInputDeviceId = deviceId || null;
+  await saveConfig(config);
+}
+
 // Wake words
 
 /**
@@ -128,4 +140,3 @@ export async function removeWakeWord(word) {
   await saveConfig(config);
   return config.wakeWords;
 }
-
