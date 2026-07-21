@@ -89,6 +89,23 @@
         <p id="avatar-info" class="info-text">No model loaded</p>
         <button id="load-vrm-btn">Load VRM…</button>
       </section>
+      <!-- ── INSTALLED APPS SECTION ── -->
+      <section class="card" id="installed-apps-section">
+        <h2>Installed Apps</h2>
+        <p class="info-text">Lets the assistant launch apps already on this computer by name.</p>
+        <p id="installed-apps-status" class="info-text">Not scanned yet</p>
+        <div class="field-row">
+          <select id="app-rescan-interval-select">
+            <option value="0">Manual only</option>
+            <option value="15">Every 15 minutes</option>
+            <option value="30">Every 30 minutes</option>
+            <option value="60">Every hour</option>
+            <option value="360">Every 6 hours</option>
+            <option value="1440">Once a day</option>
+          </select>
+          <button id="rescan-apps-btn" class="btn-secondary">Rescan now</button>
+        </div>
+      </section>
     </div>
 
     <script type="module" src="/src/ui.js"></script>

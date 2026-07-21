@@ -94,3 +94,19 @@ export async function getAppVersion() {
 export async function downloadAndExtractAnimations(url) {
   return bridge().invoke('download-and-extract-animations', { url });
 }
+
+export async function openExternal(url) {
+  return bridge().invoke('open-external', url);
+}
+
+export async function listInstalledApps(forceRescan = false) {
+  return bridge().invoke('list-installed-apps', { forceRescan });
+}
+
+export async function launchApp(name) {
+  return bridge().invoke('launch-app', { name });
+}
+
+export async function setAppRescanInterval(minutes) {
+  return bridge().invoke('set-app-rescan-interval', minutes);
+}

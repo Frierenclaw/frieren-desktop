@@ -2,6 +2,7 @@ import {
   onFrierenEvent, emitFrierenEvent,
   setIgnoreCursorEvents, moveWindowBy, resizeWindowCentered, centerWindow,
   openOrFocusSettingsWindow, localPathToFileUrl, quitApp, downloadAndExtractAnimations,
+  openExternal, launchApp,
 } from './electron-ipc.js';
 
 import {
@@ -293,6 +294,58 @@ registerFunction({
   },
 }, async () => {
   return { connected: isConnected() };
+});
+
+registerFunction({
+  name: 'open_browser',
+  description: 'Opens a URL in the user\'s default web browser. If no URL is given, opens a blank default page.',
+  extended_access_rights: false,
+  input_schema: {
+    type: 'object',
+    properties: {
+      url: { type: 'string', description: 'Full URL to open, e.g. https://example.com' },
+    },
+    required: [],
+  },
+}, async (args) => {
+  const url = args?.url || 'https://www.google.com';
+  const result = await openExternal(url);
+  return { opened: result?.opened ?? url };
+});
+
+registerFunction({
+  name: 'open_app',
+  description: 'Launches an application already installed on the user\'s computer, matched by name (e.g. "Spotify", "Forza Horizon 4"). Never installs or downloads anything; if no locally installed app matches, returns launched:false with reason "not_found".',
+  extended_access_rights: false,
+  input_schema: {
+    type: 'object',
+    properties: {
+      name: { type: 'string', description: 'Name of the installed application to launch' },
+    },
+    required: ['name'],
+  },
+}, async (args) => {
+  return launchApp(args?.name);
+});
+
+registerFunction({
+  name: 'open_spotify',
+  description: 'Opens the Spotify desktop app if installed, falling back to the Spotify web player in the browser otherwise.',
+  extended_access_rights: false,
+  input_schema: {
+    type: 'object',
+    properties: {},
+    required: [],
+  },
+}, async () => {
+  try {
+    const result = await openExternal('spotify:');
+    return { opened: result?.opened ?? 'spotify:', app: 'desktop' };
+  } catch (err) {
+    console.warn('[agent] Spotify app not available, falling back to web player:', err);
+    const result = await openExternal('https://open.spotify.com');
+    return { opened: result?.opened ?? 'https://open.spotify.com', app: 'web' };
+  }
 });
 
 const animationClipUrls = new Map();

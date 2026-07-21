@@ -10,7 +10,7 @@
  * Sends commands to the avatar window via the Electron IPC event relay.
  */
 
-import { onFrierenEvent, emitFrierenEvent, emitFrierenEventTo, openFileDialog } from './electron-ipc.js';
+import { onFrierenEvent, emitFrierenEvent, emitFrierenEventTo, openFileDialog, listInstalledApps } from './electron-ipc.js';
 import { Room } from 'livekit-client';
 
 import { login, logout, isLoggedIn, getBaseUrl, authedFetch } from './auth.js';
@@ -27,6 +27,8 @@ import {
   removeWakeWord,
   getAudioInputDeviceId,
   setAudioInputDeviceId,
+  getAppRescanMinutes,
+  setAppRescanMinutes,
 } from './config.js';
 
 // DOM refs
@@ -62,6 +64,10 @@ const loadVrmBtn           = $('load-vrm-btn');
 const characterStatus      = $('character-status');
 const characterList        = $('character-list');
 
+const installedAppsStatus       = $('installed-apps-status');
+const rescanAppsBtn             = $('rescan-apps-btn');
+const appRescanIntervalSelect   = $('app-rescan-interval-select');
+
 const wakeWordsList        = $('wake-words-list');
 const newWakeWordInput     = $('new-wake-word');
 const addWakeWordBtn       = $('add-wake-word-btn');
@@ -75,6 +81,7 @@ async function init() {
   await loadCharacters();
   await renderWakeWords();
   await renderAudioInputDevices();
+  await initInstalledApps();
 
   // Ask the avatar window for its current connection state
   emitFrierenEvent('frieren:state-query');
@@ -135,6 +142,8 @@ async function renderInstances() {
 
 instanceSelect.addEventListener('change', async () => {
   await setSelectedInstance(Number(instanceSelect.value));
+  await setCharacterId(null);
+  await updateConnectAvailability();
 });
 
 addInstanceBtn.addEventListener('click', () => {
@@ -161,6 +170,8 @@ saveInstanceBtn.addEventListener('click', async () => {
 
   const updatedConfig = await addInstance(name, url);
   await setSelectedInstance(updatedConfig.instances.length - 1);
+  await setCharacterId(null);
+  await updateConnectAvailability();
   await renderInstances();
   addInstanceForm.classList.add('hidden');
   newInstanceName.value = '';
@@ -177,12 +188,31 @@ async function renderAuthState() {
     loggedInView.classList.remove('hidden');
     const baseUrl    = await getBaseUrl();
     authInfo.textContent = `Logged in to ${baseUrl}`;
-    connectBtn.disabled  = false;
+    await updateConnectAvailability();
   } else {
     loginForm.classList.remove('hidden');
     loggedInView.classList.add('hidden');
     connectBtn.disabled = true;
+    connectBtn.title = '';
   }
+}
+
+/**
+ * Connect should be impossible until a character is actually selected,
+ * otherwise it ships an empty/stale character_id and the server 404s with
+ * "Character not found" instead of a clear client-side message.
+ */
+async function updateConnectAvailability() {
+  const loggedIn = await isLoggedIn();
+  if (!loggedIn) {
+    connectBtn.disabled = true;
+    connectBtn.title = '';
+    return;
+  }
+  const config = await getConfig();
+  const hasCharacter = !!config.characterId;
+  connectBtn.disabled = !hasCharacter;
+  connectBtn.title = hasCharacter ? '' : 'Select a character first';
 }
 
 loginBtn.addEventListener('click', async () => {
@@ -444,6 +474,7 @@ async function loadCharacters() {
         characterList.querySelectorAll('.character-card').forEach(c => c.classList.remove('selected'));
         card.classList.add('selected');
         await setCharacterId(char.id);
+        await updateConnectAvailability();
 
         // If the character has a model_url, auto-load it
         if (char.model_url) {
@@ -463,6 +494,39 @@ async function loadCharacters() {
     characterStatus.textContent = `Error: ${err.message}`;
   }
 }
+
+// Installed apps section
+
+function renderInstalledAppsInfo({ names, scannedAt }) {
+  if (!scannedAt) {
+    installedAppsStatus.textContent = 'Not scanned yet';
+    return;
+  }
+  const when = new Date(scannedAt).toLocaleTimeString();
+  installedAppsStatus.textContent = `${names.length} app(s) found (last scanned ${when})`;
+}
+
+async function refreshInstalledApps(forceRescan) {
+  installedAppsStatus.textContent = forceRescan ? 'Rescanning…' : 'Loading…';
+  try {
+    const info = await listInstalledApps(forceRescan);
+    renderInstalledAppsInfo(info);
+  } catch (err) {
+    installedAppsStatus.textContent = `Error: ${err.message}`;
+  }
+}
+
+async function initInstalledApps() {
+  const savedMinutes = await getAppRescanMinutes();
+  appRescanIntervalSelect.value = String(savedMinutes);
+  await refreshInstalledApps(false);
+}
+
+rescanAppsBtn.addEventListener('click', () => refreshInstalledApps(true));
+
+appRescanIntervalSelect.addEventListener('change', async () => {
+  await setAppRescanMinutes(Number(appRescanIntervalSelect.value));
+});
 
 // Init
 init();

@@ -9,7 +9,7 @@
  *   - wakeWords[]    : wake phrases sent to Fern on connect (e.g. "Hey Frieren")
  */
 
-import { storeGet, storeSet } from './electron-ipc.js';
+import { storeGet, storeSet, setAppRescanInterval as setAppRescanIntervalIPC } from './electron-ipc.js';
 
 const CONFIG_FILE = 'frieren-config.json';
 
@@ -23,6 +23,7 @@ const DEFAULT_CONFIG = {
   characterId: null,
   wakeWords: ['Hey Frieren'],
   audioInputDeviceId: null,
+  appRescanMinutes: 0,
 };
 
 // Public API
@@ -94,6 +95,20 @@ export async function setAudioInputDeviceId(deviceId) {
   const config = await getConfig();
   config.audioInputDeviceId = deviceId || null;
   await saveConfig(config);
+}
+
+// Installed-app rescan interval
+
+export async function getAppRescanMinutes() {
+  const config = await getConfig();
+  return config.appRescanMinutes ?? 0;
+}
+
+export async function setAppRescanMinutes(minutes) {
+  const config = await getConfig();
+  config.appRescanMinutes = minutes;
+  await saveConfig(config);
+  await setAppRescanIntervalIPC(minutes);
 }
 
 // Wake words
