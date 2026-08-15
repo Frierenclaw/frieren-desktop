@@ -45,8 +45,20 @@ export async function getWindowPosition() {
   return bridge().invoke('get-window-position');
 }
 
+export async function getWindowBounds() {
+  return bridge().invoke('get-window-bounds');
+}
+
+export async function getDisplayWorkArea() {
+  return bridge().invoke('get-display-work-area');
+}
+
 export async function moveWindowBy(dx, dy) {
   return bridge().invoke('move-window-by', { dx, dy });
+}
+
+export async function moveWindowSmooth(dx, dy, durationMs) {
+  return bridge().invoke('move-window-smooth', { dx, dy, durationMs });
 }
 
 export async function resizeWindowCentered(width, height) {

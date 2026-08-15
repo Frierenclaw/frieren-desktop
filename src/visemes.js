@@ -6,7 +6,7 @@
 //
 //     { "type": "vrm_viseme", "viseme": "aa" | "ih" | "ou" | "ee" | "oh" | "neutral" }
 //
-// The client therefore does no phoneme mapping itself — it only validates the
+// The client therefore does no phoneme mapping itself, it only validates the
 // incoming name and blends it onto the avatar. Most VRM models expose just the
 // five universal vowel expressions; phoneme expressions (pp, ff, th…) only
 // exist in VRM 1.0 models, so we stick to the vowels for portability.

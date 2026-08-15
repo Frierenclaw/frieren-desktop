@@ -1,11 +1,9 @@
-/* ─────────────── RESET ─────────────── */
 *, *::before, *::after {
   margin: 0;
   padding: 0;
   box-sizing: border-box;
 }
 
-/* ─────────────── AVATAR WINDOW (transparent) ─────────────── */
 body.avatar-window {
   background: transparent !important;
   overflow: hidden;
@@ -24,12 +22,11 @@ body.avatar-window {
   width: 100%;
   height: 100%;
   display: block;
-  /* Cursor shows it's draggable */
+
   cursor: grab;
 }
 #avatar-canvas:active { cursor: grabbing; }
 
-/* ── Resize outline (shown during Ctrl+scroll) ── */
 #resize-outline {
   position: absolute;
   display: none;
@@ -44,7 +41,6 @@ body.avatar-window {
 }
 #resize-outline.visible { display: block; }
 
-/* ── Status dot (top-right corner) ── */
 .status {
   position: absolute;
   top: 10px;
@@ -66,7 +62,6 @@ body.avatar-window {
   50%       { opacity: 0.4; }
 }
 
-/* ── Settings gear button (bottom-right corner) ── */
 #open-ui-btn {
   position: absolute;
   bottom: 10px;
@@ -90,7 +85,6 @@ body.avatar-window {
   transform: rotate(30deg);
 }
 
-/* ─────────────── UI / SETTINGS WINDOW ─────────────── */
 body.ui-window {
   background: #0f0f1a;
   color: #e2e2f0;
@@ -106,7 +100,6 @@ body.ui-window {
   padding: 20px 16px 32px;
 }
 
-/* ── Header ── */
 header {
   display: flex;
   align-items: center;
@@ -121,7 +114,6 @@ header h1 {
   flex: 1;
 }
 
-/* ── Badge ── */
 .badge {
   font-size: 11px;
   font-weight: 600;
@@ -134,7 +126,6 @@ header h1 {
 .badge.connecting   { background: #422006; color: #facc15; }
 .badge.disconnected { background: #3f1212; color: #f87171; }
 
-/* ── Card ── */
 .card {
   background: #161627;
   border: 1px solid #252540;
@@ -151,9 +142,9 @@ header h1 {
   margin-bottom: 12px;
 }
 
-/* ── Form fields ── */
 input[type="text"],
 input[type="password"],
+input[type="email"],
 select {
   width: 100%;
   padding: 8px 10px;
@@ -171,7 +162,23 @@ input:focus, select:focus {
 }
 input::placeholder { color: #4b5563; }
 
-/* ── Buttons ── */
+.upload-textarea {
+  width: 100%;
+  padding: 8px 10px;
+  background: #0d0d1f;
+  border: 1px solid #2e2e50;
+  border-radius: 6px;
+  color: #e2e2f0;
+  font-size: 13px;
+  font-family: inherit;
+  outline: none;
+  resize: vertical;
+  transition: border-color 0.15s;
+  margin-bottom: 8px;
+}
+.upload-textarea:focus { border-color: #7c3aed; }
+.upload-textarea::placeholder { color: #4b5563; }
+
 button {
   padding: 8px 16px;
   background: #7c3aed;
@@ -198,7 +205,6 @@ button.btn-danger {
 }
 button.btn-danger:hover { background: #991b1b; }
 
-/* ── Layout helpers ── */
 .field-row {
   display: flex;
   gap: 8px;
@@ -213,7 +219,6 @@ button.btn-danger:hover { background: #991b1b; }
   margin-top: 8px;
 }
 
-/* ── Text helpers ── */
 .info-text {
   font-size: 12px;
   color: #6b7280;
@@ -226,7 +231,6 @@ button.btn-danger:hover { background: #991b1b; }
 }
 .hidden { display: none !important; }
 
-/* ── Context menu ── */
 #context-menu {
   position: fixed;
   z-index: 1000;
@@ -276,7 +280,6 @@ button.btn-danger:hover { background: #991b1b; }
   margin: 2px 0;
 }
 
-/* ── Controls panel ── */
 #controls-panel {
   position: fixed;
   z-index: 999;
@@ -344,7 +347,6 @@ button.btn-danger:hover { background: #991b1b; }
   color: #a0a0c0;
 }
 
-/* ── Passive mode toggle button ── */
 #passive-btn {
   position: absolute;
   bottom: 40px;
@@ -368,7 +370,6 @@ button.btn-danger:hover { background: #991b1b; }
   display: flex;
 }
 
-/* ── Character selector ── */
 .character-grid {
   display: flex;
   flex-direction: column;
@@ -436,7 +437,6 @@ button.btn-danger:hover { background: #991b1b; }
   text-overflow: ellipsis;
 }
 
-/* ── Wake words chips ── */
 .chips {
   display: flex;
   flex-wrap: wrap;
@@ -483,6 +483,74 @@ button.btn-danger:hover { background: #991b1b; }
   color: #fca5a5;
 }
 
-/* Keep the input in a wake-words row aligned with the others */
 #wake-words-section .field-row input { flex: 1; margin-bottom: 0; }
 #wake-words-section .field-row button { flex-shrink: 0; }
+
+.switch-auth-mode {
+  font-size: 12px;
+  margin-top: 8px;
+  margin-bottom: 0;
+}
+.switch-auth-mode a {
+  color: #a78bfa;
+  text-decoration: none;
+}
+.switch-auth-mode a:hover {
+  text-decoration: underline;
+}
+
+.hidden-file-input {
+  display: none;
+}
+.file-picker-label {
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 16px;
+  background: #1e1e38;
+  color: #a0a0c0;
+  border: 1px solid #2e2e50;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s;
+  flex-shrink: 0;
+}
+.file-picker-label:hover {
+  background: #2a2a44;
+}
+
+.chat-messages {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 220px;
+  overflow-y: auto;
+  margin-bottom: 8px;
+  padding: 2px;
+}
+.chat-bubble {
+  padding: 6px 10px;
+  border-radius: 10px;
+  font-size: 13px;
+  max-width: 85%;
+  word-wrap: break-word;
+  white-space: pre-wrap;
+}
+.chat-bubble-user {
+  align-self: flex-end;
+  background: #1a1040;
+  color: #e2e2f0;
+}
+.chat-bubble-assistant {
+  align-self: flex-start;
+  background: #1e1e38;
+  color: #c4b5fd;
+}
+.chat-bubble-pending {
+  opacity: 0.6;
+  font-style: italic;
+}
+
+#text-chat-section .field-row input { flex: 1; margin-bottom: 0; }
+#text-chat-section .field-row button { flex-shrink: 0; }

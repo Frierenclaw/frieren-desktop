@@ -1,6 +1,6 @@
 {
   "name": "frieren-desktop",
-  "version": "0.4.0",
+  "version": "0.4.5",
   "description": "Real-time Electron desktop client for the Frieren AI ecosystem.",
   "private": true,
   "type": "module",

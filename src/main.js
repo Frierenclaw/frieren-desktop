@@ -19,6 +19,7 @@ import { togglePassive, isPassiveMode, initPassiveModeControls } from './passive
 import { initContextMenu } from './context-menu.js';
 import { registerAnimations, initAnimationPlayback } from './animations.js';
 import { loadAgentPlugins } from './agent-plugins/loader.js';
+import { initAutonomousWalk } from './walk-controller.js';
 
 const canvas    = document.getElementById('avatar-canvas');
 const statusDot = document.getElementById('status-dot');
@@ -30,6 +31,8 @@ initPassiveModeControls();
 initContextMenu();
 initAnimationPlayback();
 loadAgentPlugins();
+
+initAutonomousWalk();
 
 canvas.addEventListener('mousedown', (e) => {
   tryUnblockAudio();

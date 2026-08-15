@@ -14,14 +14,13 @@
         <div id="connection-badge" class="badge disconnected">Disconnected</div>
       </header>
 
-      <!-- ── INSTANCE SECTION ── -->
       <section class="card" id="instance-section">
         <h2>Instance</h2>
         <div class="field-row">
           <select id="instance-select"></select>
           <button id="add-instance-btn" class="btn-secondary" title="Add custom instance">+</button>
         </div>
-        <!-- Hidden until user clicks "+" -->
+
         <div id="add-instance-form" class="hidden">
           <input type="text" id="new-instance-name" placeholder="Name (e.g. My Server)" />
           <input type="text" id="new-instance-url"  placeholder="https://my-instance.com" />
@@ -32,15 +31,25 @@
         </div>
       </section>
 
-      <!-- ── AUTH SECTION ── -->
       <section class="card" id="auth-section">
         <h2>Account</h2>
 
         <div id="login-form">
-          <input type="text"     id="username" placeholder="Username" autocomplete="username" />
+          <input type="text"     id="username" placeholder="Email" autocomplete="username" />
           <input type="password" id="password" placeholder="Password" autocomplete="current-password" />
           <button id="login-btn">Login</button>
+          <p class="switch-auth-mode"><a href="#" id="show-register-link">Create an account</a></p>
           <p id="auth-error" class="error hidden"></p>
+        </div>
+
+        <div id="register-form" class="hidden">
+          <input type="text"     id="register-full-name" placeholder="Full name" autocomplete="name" />
+          <input type="email"    id="register-email" placeholder="Email" autocomplete="email" />
+          <input type="password" id="register-password" placeholder="Password" autocomplete="new-password" />
+          <input type="password" id="register-password-confirm" placeholder="Confirm password" autocomplete="new-password" />
+          <button id="register-btn">Create account</button>
+          <p class="switch-auth-mode"><a href="#" id="show-login-link">Already have an account? Log in</a></p>
+          <p id="register-error" class="error hidden"></p>
         </div>
 
         <div id="logged-in-view" class="hidden">
@@ -49,7 +58,6 @@
         </div>
       </section>
 
-      <!-- ── CONNECTION SECTION ── -->
       <section class="card" id="connection-section">
         <h2>Connection</h2>
         <p id="connection-status-text" class="info-text">Not connected</p>
@@ -58,7 +66,18 @@
           <button id="disconnect-btn" class="btn-danger hidden">Disconnect</button>
         </div>
       </section>
-      <!-- ── MICROPHONE SECTION ── -->
+
+      <section class="card" id="text-chat-section">
+        <h2>Text Chat</h2>
+        <p class="info-text">Chat by text, no voice or avatar required. Uses whichever character is selected below.</p>
+        <div id="chat-messages" class="chat-messages"></div>
+        <div class="field-row">
+          <input type="text" id="chat-input" placeholder="Say something…" />
+          <button id="chat-send-btn">Send</button>
+        </div>
+        <p id="chat-error" class="error hidden"></p>
+      </section>
+
       <section class="card" id="microphone-section">
         <h2>Microphone</h2>
         <div class="field-row">
@@ -66,13 +85,42 @@
         </div>
         <p id="audio-input-status" class="info-text"></p>
       </section>
-      <!-- ── CHARACTER SECTION ── -->
+
       <section class="card" id="character-section">
         <h2>Character</h2>
         <p id="character-status" class="info-text">Log in to see characters</p>
         <div id="character-list" class="character-grid"></div>
       </section>
-      <!-- ── WAKE WORDS SECTION ── -->
+
+      <section class="card" id="upload-section">
+        <h2>Upload Character</h2>
+        <p class="info-text">Publish a VRM model to the hub so anyone on this instance can select it.</p>
+        <p id="upload-logged-out" class="info-text">Log in to upload a character.</p>
+        <div id="upload-form" class="hidden">
+          <input type="text" id="upload-name" placeholder="Character name" />
+          <textarea id="upload-description" placeholder="Description, shown to other users" rows="2" class="upload-textarea"></textarea>
+          <textarea id="upload-prompt" placeholder="Personality prompt, how the character should talk and behave" rows="4" class="upload-textarea"></textarea>
+          <div class="field-row">
+            <label class="file-picker-label" for="upload-vrm-input">Choose VRM…</label>
+            <input type="file" id="upload-vrm-input" accept=".vrm" class="hidden-file-input" />
+            <span id="upload-vrm-filename" class="info-text"></span>
+          </div>
+          <div class="field-row">
+            <label class="file-picker-label" for="upload-cover-input">Choose cover image (optional)…</label>
+            <input type="file" id="upload-cover-input" accept="image/*" class="hidden-file-input" />
+            <span id="upload-cover-filename" class="info-text"></span>
+          </div>
+          <div class="field-row">
+            <label class="file-picker-label" for="upload-animations-input">Choose animations archive (optional)…</label>
+            <input type="file" id="upload-animations-input" accept=".zip,.tar.gz,.tgz,.vrma" class="hidden-file-input" />
+            <span id="upload-animations-filename" class="info-text"></span>
+          </div>
+          <button id="upload-submit-btn" disabled>Upload</button>
+          <p id="upload-status" class="info-text"></p>
+          <p id="upload-error" class="error hidden"></p>
+        </div>
+      </section>
+
       <section class="card" id="wake-words-section">
         <h2>Wake Words</h2>
         <p class="info-text">Phrases that wake the assistant before you speak.</p>
@@ -83,13 +131,13 @@
         </div>
         <p id="wake-words-error" class="error hidden"></p>
       </section>
-      <!-- ── AVATAR SECTION ── -->
+
       <section class="card" id="avatar-section">
         <h2>Avatar Model</h2>
         <p id="avatar-info" class="info-text">No model loaded</p>
         <button id="load-vrm-btn">Load VRM…</button>
       </section>
-      <!-- ── INSTALLED APPS SECTION ── -->
+
       <section class="card" id="installed-apps-section">
         <h2>Installed Apps</h2>
         <p class="info-text">Lets the assistant launch apps already on this computer by name.</p>

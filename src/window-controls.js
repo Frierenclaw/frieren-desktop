@@ -1,7 +1,7 @@
 import { moveWindowBy, resizeWindowCentered, centerWindow } from './electron-ipc.js';
 import { onAvatarDragMove, onAvatarResizeWheel, handleResize, resetAvatarTransform } from './avatar.js';
 
-const CONTAINER_MARGIN  = 240;
+const CONTAINER_MARGIN  = 40;
 const MIN_CONTAINER_W   = 120;
 const MAX_CONTAINER_W   = 800;
 const CONTAINER_ASPECT  = 480 / 280;

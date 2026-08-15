@@ -1,19 +1,27 @@
-/**
- * ui-auth.js, "Account" card
- */
-
-import { login, logout, isLoggedIn, getBaseUrl } from './auth.js';
+import { login, register, logout, isLoggedIn, getBaseUrl } from './auth.js';
 import { getActiveInstanceUrl, setCharacterId } from './config.js';
 import { $ } from './ui-shared.js';
 import { updateConnectAvailability } from './ui-connect-gate.js';
 import { disconnectIfConnected } from './ui-connection.js';
 import { loadCharacters } from './ui-characters.js';
+import { renderUploadAvailability } from './ui-upload.js';
 
 const loginForm     = $('login-form');
 const usernameInput = $('username');
 const passwordInput = $('password');
 const loginBtn       = $('login-btn');
 const authError      = $('auth-error');
+
+const registerForm           = $('register-form');
+const registerFullNameInput  = $('register-full-name');
+const registerEmailInput     = $('register-email');
+const registerPasswordInput  = $('register-password');
+const registerConfirmInput   = $('register-password-confirm');
+const registerBtn            = $('register-btn');
+const registerError          = $('register-error');
+const showRegisterLink       = $('show-register-link');
+const showLoginLink          = $('show-login-link');
+
 const loggedInView   = $('logged-in-view');
 const authInfo       = $('auth-info');
 const logoutBtn      = $('logout-btn');
@@ -23,22 +31,41 @@ function showAuthError(msg) {
   authError.classList.remove('hidden');
 }
 
+function showRegisterError(msg) {
+  registerError.textContent = msg;
+  registerError.classList.remove('hidden');
+}
+
+function switchToRegister() {
+  authError.classList.add('hidden');
+  loginForm.classList.add('hidden');
+  registerForm.classList.remove('hidden');
+}
+
+function switchToLogin() {
+  registerError.classList.add('hidden');
+  registerForm.classList.add('hidden');
+  loginForm.classList.remove('hidden');
+}
+
 export async function renderAuthState() {
   const loggedIn = await isLoggedIn();
 
   if (loggedIn) {
     loginForm.classList.add('hidden');
+    registerForm.classList.add('hidden');
     loggedInView.classList.remove('hidden');
     const baseUrl = await getBaseUrl();
     authInfo.textContent = `Logged in to ${baseUrl}`;
   } else {
-    loginForm.classList.remove('hidden');
     loggedInView.classList.add('hidden');
+    if (loginForm.classList.contains('hidden') && registerForm.classList.contains('hidden')) {
+      loginForm.classList.remove('hidden');
+    }
   }
 
-  // Not-logged-in is also handled inside updateConnectAvailability (it
-  // disables the button and clears the tooltip), so this covers both branches.
   await updateConnectAvailability();
+  await renderUploadAvailability();
 }
 
 export function initAuthSection() {
@@ -48,7 +75,7 @@ export function initAuthSection() {
     const baseUrl  = await getActiveInstanceUrl();
 
     if (!username || !password) {
-      showAuthError('Username and password are required.');
+      showAuthError('Email and password are required.');
       return;
     }
 
@@ -69,12 +96,56 @@ export function initAuthSection() {
     }
   });
 
+  showRegisterLink.addEventListener('click', (e) => { e.preventDefault(); switchToRegister(); });
+  showLoginLink.addEventListener('click', (e) => { e.preventDefault(); switchToLogin(); });
+
+  registerBtn.addEventListener('click', async () => {
+    const fullName = registerFullNameInput.value.trim();
+    const email    = registerEmailInput.value.trim();
+    const password = registerPasswordInput.value;
+    const confirm  = registerConfirmInput.value;
+    const baseUrl  = await getActiveInstanceUrl();
+
+    registerError.classList.add('hidden');
+
+    if (!fullName || !email || !password) {
+      showRegisterError('Name, email, and password are required.');
+      return;
+    }
+    if (password !== confirm) {
+      showRegisterError('Passwords do not match.');
+      return;
+    }
+
+    registerBtn.disabled    = true;
+    registerBtn.textContent = 'Creating account...';
+
+    try {
+      const data = await register(baseUrl, email, fullName, password);
+
+      registerPasswordInput.value = '';
+      registerConfirmInput.value  = '';
+
+      if (data.access_token) {
+        await renderAuthState();
+        await loadCharacters();
+      } else {
+        switchToLogin();
+        usernameInput.value = email;
+      }
+    } catch (err) {
+      showRegisterError(err.message);
+    } finally {
+      registerBtn.disabled    = false;
+      registerBtn.textContent = 'Create account';
+    }
+  });
+
   logoutBtn.addEventListener('click', async () => {
     await logout();
     await setCharacterId(null);
     await renderAuthState();
     await loadCharacters();
-    // If we were connected, the session is now invalid
     disconnectIfConnected();
   });
 

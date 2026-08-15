@@ -6,7 +6,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const isDev = !app.isPackaged;
 const DIST_DIR = path.join(__dirname, '..', 'dist');
 
-const CONTAINER_MARGIN    = 240;
+const CONTAINER_MARGIN    = 40;
 const DEFAULT_CONTAINER_W = 280;
 const DEFAULT_CONTAINER_H = 480;
 
